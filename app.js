@@ -330,8 +330,9 @@ async function previewScreenshotImport(event){
   for(const file of files)pendingScreenshotImages.push({name:file.name,dataUrl:await compressScreenshot(file),ocrText:'',confidence:null});
   pendingScreenshotDataUrl=pendingScreenshotImages[0]?.dataUrl||'';
   renderScreenshotPreviews();
-  if(status)status.textContent=pendingScreenshotImages.length+' Screenshot(s) lokal vorbereitet. Starte die Texterkennung oder füge Text manuell ein.';
- }catch(error){console.error(error);toast('Mindestens ein Screenshot konnte nicht verarbeitet werden.');}
+  if(status)status.textContent=pendingScreenshotImages.length+' Screenshot(s) lokal vorbereitet. Texterkennung startet automatisch …';
+  await runScreenshotOcr();
+ }catch(error){console.error(error);if(status)status.textContent='Screenshot konnte nicht vorbereitet werden: '+(error.message||'Unbekannter Fehler');toast('Mindestens ein Screenshot konnte nicht verarbeitet werden.');}
 }
 function compressScreenshot(file){
  return new Promise((resolve,reject)=>{
@@ -401,14 +402,19 @@ function clearScreenshotImport(){
  if(status)status.textContent='Import zurückgesetzt. Du kannst bis zu 8 neue Screenshots auswählen.';
 }
 function parseScreenshotText(raw){
- const lines=String(raw||'').split(/\r?\n/).map(x=>x.trim()).filter(x=>Boolean(x)&&!/^---\s.*\s---$/.test(x));
+ const lines=String(raw||'').split(/\r?\n/).map(x=>x.replace(/\s+/g,' ').trim()).filter(x=>Boolean(x)&&!/^---\s.*\s---$/.test(x));
  const priceMatch=String(raw||'').match(/(?:€\s*)?(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|EUR)(?![A-Za-z])|\bEUR\s*(\d{1,4}(?:[.,]\d{1,2})?)/i);
  let price=null;
  if(priceMatch){const token=priceMatch[1]||priceMatch[2];const n=Number(token.replace(',','.'));if(Number.isFinite(n))price=n;}
- const priceLineIndex=lines.findIndex(x=>/(?:€|EUR)/i.test(x));
- const title=lines.find(x=>!/(?:€|EUR)/i.test(x)&&x.length>3&&!/^https?:\/\//i.test(x))||'';
- const description=lines.filter((x,i)=>x!==title&&i!==priceLineIndex&&!/^https?:\/\//i.test(x)).join('\n').slice(0,2000);
- return {title,price,description};
+ const clean=x=>x.replace(/^\[?Black Friday\]?\s*/i,'').trim();
+ const ignored=/^(?:\d{1,2}:\d{2}|inkl\.?\s*MwSt|kostenloser versand|lieferung|ähnliches finden|farbe:|verkauft von|warenkorb|kasse|einkaufswagen|versand|zurück|mehr)$/i;
+ const useful=lines.map(clean).filter(x=>x.length>=18&&!ignored.test(x)&&!/(?:€|EUR)/i.test(x)&&!/^https?:\/\//i.test(x)&&!/^\d+(?:[.,]\d+)?\s*\(/.test(x));
+ const titleCandidates=useful.filter(x=>/(jacke|fleece|hoodie|hose|shirt|schuhe|tasche|akku|bohrer|lampe|kopfhörer|sportjacke)/i.test(x));
+ const title=(titleCandidates.sort((a,b)=>b.length-a.length)[0]||useful.sort((a,b)=>b.length-a.length)[0]||'').slice(0,160);
+ const sellerMatch=String(raw||'').match(/(?:verkauft von|sold by|shop)\s*[:：]?\s*([^\n\r]+)/i);
+ const merchant=sellerMatch? sellerMatch[1].replace(/\s+/g,' ').trim().slice(0,100) : (lines.find(x=>/^[A-Z0-9][A-Z0-9 ._-]{3,30}$/.test(x)&&!ignored.test(x))||'');
+ const description=useful.filter(x=>x!==title).join('\n').slice(0,2000);
+ return {title,price,description,merchant};
 }
 function prepareProductFromScreenshot(){
  if(!pendingScreenshotDataUrl){toast('Bitte zuerst einen Screenshot auswählen.');return;}
@@ -416,6 +422,7 @@ function prepareProductFromScreenshot(){
  showProductForm();
  const form=$('#productForm');
  if(parsed.title&&!form.elements.name.value)form.elements.name.value=parsed.title.slice(0,160);
+ if(parsed.merchant&&!form.elements.merchant.value)form.elements.merchant.value=parsed.merchant;
  if(parsed.price!==null&&!form.elements.price.value)form.elements.price.value=String(parsed.price).replace('.',',');
  if(parsed.description&&!form.elements.description.value)form.elements.description.value=parsed.description;
  form.elements.importStatus.value='Screenshot lokal übernommen – Angaben manuell geprüft und zu bestätigen';
