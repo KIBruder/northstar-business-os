@@ -9,6 +9,8 @@ const sections = [
 ];
 let active = 'overview';
 let pendingScreenshotDataUrl = '';
+let pendingScreenshotImages = [];
+let ocrWorkerPromise = null;
 
 let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
 
@@ -66,9 +68,10 @@ function productsPage(){
  <section class="panel screenshot-import-panel" id="screenshotImportPanel">
    <div class="panel-head"><div><h3>Produkt per Screenshot erfassen</h3><p>TikTok-Shop- oder Shop-Screenshot vom iPhone auswählen.</p></div><span class="status-tag">Bild-Import</span></div>
    <label class="screenshot-file-label">Screenshot auswählen
-     <input id="screenshotFile" type="file" accept="image/*">
+     <input id="screenshotFile" type="file" accept="image/*" multiple>
    </label>
-   <div id="screenshotPreview" class="screenshot-preview" hidden></div>
+   <div id="screenshotPreview" class="screenshot-preview screenshot-preview-list" hidden></div>
+   <div class="screenshot-actions"><button class="button button-secondary" id="runScreenshotOcr" type="button">Texterkennung starten</button></div>
    <label class="screenshot-text-label">Produkttext aus dem Screenshot (optional)
      <textarea id="screenshotText" rows="4" maxlength="5000" placeholder="Text aus dem Screenshot hier einfügen, falls du ihn kopiert oder per iPhone-Texterkennung ausgewählt hast."></textarea>
    </label>
@@ -76,7 +79,7 @@ function productsPage(){
      <button class="button button-primary" id="prepareScreenshotProduct" type="button">Angaben übernehmen</button>
      <button class="button button-secondary" id="clearScreenshotImport" type="button">Zurücksetzen</button>
    </div>
-   <div id="screenshotImportStatus" class="form-hint" aria-live="polite">Das Bild wird lokal vorbereitet. Northstar führt in dieser Version keine automatische OCR-Texterkennung aus. Du kannst Text mit der iPhone-Funktion „Live Text“ kopieren und hier einfügen. Alle übernommenen Angaben bleiben vor dem Speichern bearbeitbar.</div>
+   <div id="screenshotImportStatus" class="form-hint" aria-live="polite">Bis zu 8 Screenshots auswählen. Deutsche und englische Texterkennung läuft lokal im Browser. Beim ersten Start werden OCR-Engine und Sprachdaten von einem CDN geladen; Bilder werden nicht hochgeladen.</div>
  </section>
  <section class="panel product-form-panel" id="productFormPanel" hidden>
    <div class="panel-head"><div><h3 id="productFormTitle">Neues Produkt erfassen</h3><p>Produktdaten bleiben lokal in diesem Arbeitsbereich gespeichert.</p></div><button class="icon-button" id="closeProductForm" type="button" aria-label="Formular schließen">✕</button></div>
@@ -234,6 +237,7 @@ function renderPage(){
  $('#addProduct')?.addEventListener('click',()=>showProductForm());
  $('#inspectProductLink')?.addEventListener('click',inspectProductLink);
  $('#screenshotFile')?.addEventListener('change',previewScreenshotImport);
+ $('#runScreenshotOcr')?.addEventListener('click',runScreenshotOcr);
  $('#prepareScreenshotProduct')?.addEventListener('click',prepareProductFromScreenshot);
  $('#clearScreenshotImport')?.addEventListener('click',clearScreenshotImport);
 
@@ -315,21 +319,85 @@ function inspectProductLink(){
  form.elements.name.focus();
 }
 async function previewScreenshotImport(event){
- const file=event.target.files?.[0],box=$('#screenshotPreview'),status=$('#screenshotImportStatus');
- if(!file){pendingScreenshotDataUrl='';if(box){box.hidden=true;box.innerHTML='';}return;}
- if(!file.type.startsWith('image/')){toast('Bitte eine Bilddatei auswählen.');event.target.value='';return;}
- if(file.size>5*1024*1024){toast('Screenshot zu groß. Maximal 5 MB.');event.target.value='';return;}
+ const files=Array.from(event.target.files||[]),box=$('#screenshotPreview'),status=$('#screenshotImportStatus');
+ pendingScreenshotImages=[];pendingScreenshotDataUrl='';
+ if(!files.length){if(box){box.hidden=true;box.innerHTML='';}return;}
+ if(files.length>8){toast('Maximal 8 Screenshots gleichzeitig.');event.target.value='';return;}
+ const invalid=files.find(f=>!f.type.startsWith('image/')||f.size>5*1024*1024);
+ if(invalid){toast('Nur Bilddateien bis maximal 5 MB pro Screenshot.');event.target.value='';return;}
  try{
-  pendingScreenshotDataUrl=await readFileAsDataUrl(file);
-  if(box){box.hidden=false;box.innerHTML=`<img src="${pendingScreenshotDataUrl}" alt="Ausgewählter Produktscreenshot"><div><strong>${esc(file.name)}</strong><small>${(file.size/1024).toFixed(0)} KB · lokal vorbereitet</small></div>`;}
-  if(status)status.textContent='Screenshot geladen. Füge bei Bedarf den mit iPhone Live Text kopierten Produkttext ein und übernimm anschließend die Angaben.';
- }catch{toast('Screenshot konnte nicht gelesen werden.');}
+  for(const file of files)pendingScreenshotImages.push({name:file.name,dataUrl:await compressScreenshot(file),ocrText:'',confidence:null});
+  pendingScreenshotDataUrl=pendingScreenshotImages[0]?.dataUrl||'';
+  renderScreenshotPreviews();
+  if(status)status.textContent=pendingScreenshotImages.length+' Screenshot(s) lokal vorbereitet. Starte die Texterkennung oder füge Text manuell ein.';
+ }catch(error){console.error(error);toast('Mindestens ein Screenshot konnte nicht verarbeitet werden.');}
+}
+function compressScreenshot(file){
+ return new Promise((resolve,reject)=>{
+  const reader=new FileReader();
+  reader.onerror=()=>reject(reader.error||new Error('Datei nicht lesbar'));
+  reader.onload=()=>{
+   const image=new Image();
+   image.onerror=()=>reject(new Error('Bild konnte nicht dekodiert werden'));
+   image.onload=()=>{
+    const scale=Math.min(1,2000/Math.max(image.naturalWidth,image.naturalHeight));
+    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+    const context=canvas.getContext('2d');if(!context){reject(new Error('Canvas nicht verfügbar'));return;}
+    context.drawImage(image,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',0.92));
+   };
+   image.src=String(reader.result||'');
+  };
+  reader.readAsDataURL(file);
+ });
+}
+function renderScreenshotPreviews(){
+ const box=$('#screenshotPreview');if(!box)return;
+ box.hidden=!pendingScreenshotImages.length;
+ box.innerHTML=pendingScreenshotImages.map((item,index)=>'<div class="screenshot-preview-item"><img src="'+item.dataUrl+'" alt="Screenshot '+(index+1)+'"><div><strong>'+esc(item.name)+'</strong><small>'+(item.ocrText?'Texterkennung abgeschlossen':'Bereit zur Texterkennung')+'</small></div></div>').join('');
+}
+function loadTesseract(){
+ if(window.Tesseract)return Promise.resolve(window.Tesseract);
+ if(ocrWorkerPromise)return ocrWorkerPromise;
+ ocrWorkerPromise=new Promise((resolve,reject)=>{
+  const script=document.createElement('script');script.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';script.async=true;
+  script.onload=()=>window.Tesseract?resolve(window.Tesseract):reject(new Error('OCR-Bibliothek nicht initialisiert.'));
+  script.onerror=()=>reject(new Error('OCR-Bibliothek konnte nicht geladen werden. Internetverbindung prüfen.'));
+  document.head.appendChild(script);
+ }).catch(error=>{ocrWorkerPromise=null;throw error;});
+ return ocrWorkerPromise;
+}
+async function runScreenshotOcr(){
+ const status=$('#screenshotImportStatus'),button=$('#runScreenshotOcr'),textArea=$('#screenshotText');
+ if(!pendingScreenshotImages.length){toast('Bitte zuerst Screenshots auswählen.');return;}
+ if(button){button.disabled=true;button.textContent='Texterkennung läuft …';}
+ let worker=null;
+ try{
+  const Tesseract=await loadTesseract();worker=await Tesseract.createWorker('deu+eng');
+  const recognized=[];
+  for(let i=0;i<pendingScreenshotImages.length;i++){
+   const item=pendingScreenshotImages[i];
+   if(status)status.textContent='Texterkennung: Screenshot '+(i+1)+' von '+pendingScreenshotImages.length+' – '+item.name;
+   const result=await worker.recognize(item.dataUrl);
+   item.ocrText=String(result.data?.text||'').trim();item.confidence=Number.isFinite(result.data?.confidence)?result.data.confidence:null;
+   if(item.ocrText)recognized.push('--- '+item.name+' ---\n'+item.ocrText);
+   renderScreenshotPreviews();
+  }
+  const combined=recognized.join('\n\n');
+  if(textArea)textArea.value=[textArea.value.trim(),combined].filter(Boolean).join('\n\n').slice(0,5000);
+  if(status)status.textContent=combined?'Texterkennung abgeschlossen: Text aus '+recognized.length+' von '+pendingScreenshotImages.length+' Screenshot(s) übernommen. Namen und Preise bitte prüfen.':'Keine lesbaren Texte erkannt. Ergänze Angaben manuell oder verwende schärfere Screenshots.';
+  toast(combined?'Texterkennung abgeschlossen.':'Kein Text erkannt.');
+ }catch(error){
+  console.error(error);if(status)status.textContent='Texterkennung fehlgeschlagen: '+(error.message||'Unbekannter Fehler')+' Du kannst weiterhin iPhone Live Text verwenden.';toast('OCR konnte nicht gestartet werden.');
+ }finally{
+  if(worker){try{await worker.terminate();}catch{}}
+  if(button){button.disabled=false;button.textContent='Texterkennung erneut starten';}
+ }
 }
 function clearScreenshotImport(){
- pendingScreenshotDataUrl='';
+ pendingScreenshotDataUrl='';pendingScreenshotImages=[];
  const file=$('#screenshotFile'),text=$('#screenshotText'),preview=$('#screenshotPreview'),status=$('#screenshotImportStatus');
  if(file)file.value='';if(text)text.value='';if(preview){preview.hidden=true;preview.innerHTML='';}
- if(status)status.textContent='Import zurückgesetzt. Du kannst einen neuen Screenshot auswählen.';
+ if(status)status.textContent='Import zurückgesetzt. Du kannst bis zu 8 neue Screenshots auswählen.';
 }
 function parseScreenshotText(raw){
  const lines=String(raw||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
@@ -447,6 +515,7 @@ async function saveProduct(event){
   sourceUrl:String(data.get('sourceUrl')||'').trim(),price,
   description:String(data.get('description')||'').trim(),
   imageUrl:String(data.get('imageUrl')||'').trim(),imageDataUrl,
+  screenshotDataUrls:pendingScreenshotImages.length?pendingScreenshotImages.map(x=>x.dataUrl):(existing?.screenshotDataUrls||[]),
   importPlatform:String(data.get('importPlatform')||existing?.importPlatform||'').trim(),
   importProductId:String(data.get('importProductId')||existing?.importProductId||'').trim(),
   importStatus:String(data.get('importStatus')||existing?.importStatus||'').trim(),
