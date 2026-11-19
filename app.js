@@ -11,6 +11,7 @@ let active = 'overview';
 let pendingScreenshotDataUrl = '';
 let pendingScreenshotImages = [];
 let ocrWorkerPromise = null;
+let generatedScreenshotOcrText = '';
 
 let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
 
@@ -67,7 +68,7 @@ function productsPage(){
  </section>
  <section class="panel screenshot-import-panel" id="screenshotImportPanel">
    <div class="panel-head"><div><h3>Produkt per Screenshot erfassen</h3><p>TikTok-Shop- oder Shop-Screenshot vom iPhone auswählen.</p></div><span class="status-tag">Bild-Import</span></div>
-   <label class="screenshot-file-label">Screenshot auswählen
+   <label class="screenshot-file-label">Screenshots auswählen (bis zu 8)
      <input id="screenshotFile" type="file" accept="image/*" multiple>
    </label>
    <div id="screenshotPreview" class="screenshot-preview screenshot-preview-list" hidden></div>
@@ -383,7 +384,7 @@ async function runScreenshotOcr(){
    renderScreenshotPreviews();
   }
   const combined=recognized.join('\n\n');
-  if(textArea)textArea.value=[textArea.value.trim(),combined].filter(Boolean).join('\n\n').slice(0,5000);
+  if(textArea){const manualText=generatedScreenshotOcrText?textArea.value.replace(generatedScreenshotOcrText,'').trim():textArea.value.trim();generatedScreenshotOcrText=combined;textArea.value=[manualText,combined].filter(Boolean).join('\n\n').slice(0,5000);}
   if(status)status.textContent=combined?'Texterkennung abgeschlossen: Text aus '+recognized.length+' von '+pendingScreenshotImages.length+' Screenshot(s) übernommen. Namen und Preise bitte prüfen.':'Keine lesbaren Texte erkannt. Ergänze Angaben manuell oder verwende schärfere Screenshots.';
   toast(combined?'Texterkennung abgeschlossen.':'Kein Text erkannt.');
  }catch(error){
@@ -394,7 +395,7 @@ async function runScreenshotOcr(){
  }
 }
 function clearScreenshotImport(){
- pendingScreenshotDataUrl='';pendingScreenshotImages=[];
+ pendingScreenshotDataUrl='';pendingScreenshotImages=[];generatedScreenshotOcrText='';
  const file=$('#screenshotFile'),text=$('#screenshotText'),preview=$('#screenshotPreview'),status=$('#screenshotImportStatus');
  if(file)file.value='';if(text)text.value='';if(preview){preview.hidden=true;preview.innerHTML='';}
  if(status)status.textContent='Import zurückgesetzt. Du kannst bis zu 8 neue Screenshots auswählen.';
