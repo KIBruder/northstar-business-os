@@ -1,8 +1,19 @@
-NORTHSTAR 0.7 – METADATENABRUF & BILDIMPORT
-
+NORTHSTAR 0.8 – SCREENSHOT-IMPORT
 Dateien: app.js, styles.css, sw.js
-Installation: ZIP entpacken; die drei Dateien im GitHub-Hauptverzeichnis ersetzen; committen; PWA neu laden.
 
-Neu: optionaler Browser-Abruf von Open-Graph-/Twitter-Metadaten und JSON-LD Product, Redirect-Follow für Kurzlinks wenn CORS es zulässt, Übernahme von Name/Beschreibung/Bild-URL/Preis als unbestätigte Seitenangaben, Screenshot-/Produktbild-Upload bis 5 MB mit lokaler IndexedDB-Speicherung und Vorschau, Anzeige von Bild und Importstatus.
+Installation:
+1. ZIP entpacken.
+2. Alle drei Dateien im GitHub-Repository-Hauptverzeichnis hochladen und gleichnamige Dateien ersetzen.
+3. Commit changes.
+4. PWA/Safari neu laden. Bei alter Anzeige PWA vollständig schließen und neu öffnen.
 
-Grenzen: Kein Proxy/Backend, kein Umgehen von Login-, CORS- oder Bot-Schutz. Bei blockiertem Abruf bleibt manueller Screenshot-/Datenimport. Preise werden NICHT als verifiziert markiert. Währungsfremde Preise werden nicht in das EUR-Preisfeld übernommen.
+Neu:
+- Eigenständiger Screenshot-Importbereich in der Produktbibliothek.
+- Bildauswahl vom iPhone, lokale Vorschau und Übernahme in die Produktakte.
+- Optionales Einfügen von Text, den der Nutzer mit iPhone Live Text aus dem Screenshot kopiert hat.
+- Lokale Erkennung eines Produktnamens, einer Preisangabe mit EUR/€ und Beschreibung aus dem eingefügten Text.
+- Übernahme in das bestehende Produktformular; Angaben bleiben vor dem Speichern editierbar.
+- Screenshot wird beim Speichern lokal am Produkt hinterlegt.
+
+Wichtige Einschränkung:
+Diese Version führt keine automatische OCR/Texterkennung auf dem Bild aus. iOS Live Text kann genutzt werden, um Text zu kopieren und in das Textfeld einzufügen. Preis und Name werden nur aus dem eingefügten Text heuristisch vorgeschlagen und müssen vom Nutzer kontrolliert werden. Es gibt keine Live-Webprüfung und keine automatische Verifizierung. Bestehende Produktdaten bleiben erhalten.

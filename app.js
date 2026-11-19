@@ -8,6 +8,8 @@ const sections = [
   ['documents','Dokumente','▧'],['reports','Managementberichte','▥'],['settings','Einstellungen','⚙']
 ];
 let active = 'overview';
+let pendingScreenshotDataUrl = '';
+
 let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
 
 const $ = (s, root=document) => root.querySelector(s);
@@ -60,6 +62,21 @@ function productsPage(){
    </div>
    <div id="linkImportResult" class="link-import-result" aria-live="polite"><span>Füge einen Produktlink ein. Northstar erkennt Shop und Linktyp und übernimmt die Adresse in die Produktakte.</span></div>
    <p class="form-hint">Hinweis: Shop-Seiten blockieren häufig den automatischen Datenabruf. Die Linkerkennung funktioniert lokal; Produktname, Preis, Bilder und Merkmale werden nur übernommen, wenn sie tatsächlich aus einer zugänglichen Quelle ausgelesen werden können. In dieser Version erfolgt noch kein Live-Scraping.</p>
+ </section>
+ <section class="panel screenshot-import-panel" id="screenshotImportPanel">
+   <div class="panel-head"><div><h3>Produkt per Screenshot erfassen</h3><p>TikTok-Shop- oder Shop-Screenshot vom iPhone auswählen.</p></div><span class="status-tag">Bild-Import</span></div>
+   <label class="screenshot-file-label">Screenshot auswählen
+     <input id="screenshotFile" type="file" accept="image/*">
+   </label>
+   <div id="screenshotPreview" class="screenshot-preview" hidden></div>
+   <label class="screenshot-text-label">Produkttext aus dem Screenshot (optional)
+     <textarea id="screenshotText" rows="4" maxlength="5000" placeholder="Text aus dem Screenshot hier einfügen, falls du ihn kopiert oder per iPhone-Texterkennung ausgewählt hast."></textarea>
+   </label>
+   <div class="screenshot-actions">
+     <button class="button button-primary" id="prepareScreenshotProduct" type="button">Angaben übernehmen</button>
+     <button class="button button-secondary" id="clearScreenshotImport" type="button">Zurücksetzen</button>
+   </div>
+   <div id="screenshotImportStatus" class="form-hint" aria-live="polite">Das Bild wird lokal vorbereitet. Northstar führt in dieser Version keine automatische OCR-Texterkennung aus. Du kannst Text mit der iPhone-Funktion „Live Text“ kopieren und hier einfügen. Alle übernommenen Angaben bleiben vor dem Speichern bearbeitbar.</div>
  </section>
  <section class="panel product-form-panel" id="productFormPanel" hidden>
    <div class="panel-head"><div><h3 id="productFormTitle">Neues Produkt erfassen</h3><p>Produktdaten bleiben lokal in diesem Arbeitsbereich gespeichert.</p></div><button class="icon-button" id="closeProductForm" type="button" aria-label="Formular schließen">✕</button></div>
@@ -216,6 +233,10 @@ function renderPage(){
  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
  $('#addProduct')?.addEventListener('click',()=>showProductForm());
  $('#inspectProductLink')?.addEventListener('click',inspectProductLink);
+ $('#screenshotFile')?.addEventListener('change',previewScreenshotImport);
+ $('#prepareScreenshotProduct')?.addEventListener('click',prepareProductFromScreenshot);
+ $('#clearScreenshotImport')?.addEventListener('click',clearScreenshotImport);
+
  $('#productImportUrl')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inspectProductLink();}});
 
  $('#closeProductForm')?.addEventListener('click',hideProductForm);
@@ -292,6 +313,49 @@ function inspectProductLink(){
  $('#fetchProductMetadata')?.addEventListener('click',()=>fetchProductMetadata(detected.url));
  const panel=$('#productFormPanel');panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
  form.elements.name.focus();
+}
+async function previewScreenshotImport(event){
+ const file=event.target.files?.[0],box=$('#screenshotPreview'),status=$('#screenshotImportStatus');
+ if(!file){pendingScreenshotDataUrl='';if(box){box.hidden=true;box.innerHTML='';}return;}
+ if(!file.type.startsWith('image/')){toast('Bitte eine Bilddatei auswählen.');event.target.value='';return;}
+ if(file.size>5*1024*1024){toast('Screenshot zu groß. Maximal 5 MB.');event.target.value='';return;}
+ try{
+  pendingScreenshotDataUrl=await readFileAsDataUrl(file);
+  if(box){box.hidden=false;box.innerHTML=`<img src="${pendingScreenshotDataUrl}" alt="Ausgewählter Produktscreenshot"><div><strong>${esc(file.name)}</strong><small>${(file.size/1024).toFixed(0)} KB · lokal vorbereitet</small></div>`;}
+  if(status)status.textContent='Screenshot geladen. Füge bei Bedarf den mit iPhone Live Text kopierten Produkttext ein und übernimm anschließend die Angaben.';
+ }catch{toast('Screenshot konnte nicht gelesen werden.');}
+}
+function clearScreenshotImport(){
+ pendingScreenshotDataUrl='';
+ const file=$('#screenshotFile'),text=$('#screenshotText'),preview=$('#screenshotPreview'),status=$('#screenshotImportStatus');
+ if(file)file.value='';if(text)text.value='';if(preview){preview.hidden=true;preview.innerHTML='';}
+ if(status)status.textContent='Import zurückgesetzt. Du kannst einen neuen Screenshot auswählen.';
+}
+function parseScreenshotText(raw){
+ const lines=String(raw||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const priceMatch=String(raw||'').match(/(?:€\s*)?(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|EUR)(?![A-Za-z])|\bEUR\s*(\d{1,4}(?:[.,]\d{1,2})?)/i);
+ let price=null;
+ if(priceMatch){const token=priceMatch[1]||priceMatch[2];const n=Number(token.replace(',','.'));if(Number.isFinite(n))price=n;}
+ const priceLineIndex=lines.findIndex(x=>/(?:€|EUR)/i.test(x));
+ const title=lines.find(x=>!/(?:€|EUR)/i.test(x)&&x.length>3&&!/^https?:\/\//i.test(x))||'';
+ const description=lines.filter((x,i)=>x!==title&&i!==priceLineIndex&&!/^https?:\/\//i.test(x)).join('\n').slice(0,2000);
+ return {title,price,description};
+}
+function prepareProductFromScreenshot(){
+ if(!pendingScreenshotDataUrl){toast('Bitte zuerst einen Screenshot auswählen.');return;}
+ const parsed=parseScreenshotText($('#screenshotText')?.value||'');
+ showProductForm();
+ const form=$('#productForm');
+ if(parsed.title&&!form.elements.name.value)form.elements.name.value=parsed.title.slice(0,160);
+ if(parsed.price!==null&&!form.elements.price.value)form.elements.price.value=String(parsed.price).replace('.',',');
+ if(parsed.description&&!form.elements.description.value)form.elements.description.value=parsed.description;
+ form.elements.importStatus.value='Screenshot lokal übernommen – Angaben manuell geprüft und zu bestätigen';
+ const preview=$('#productImagePreview');
+ if(preview){preview.hidden=false;preview.innerHTML=`<img src="${pendingScreenshotDataUrl}" alt="Screenshot für Produktakte"><span>Screenshot wird beim Speichern lokal am Produkt hinterlegt.</span>`;}
+ const status=$('#screenshotImportStatus');
+ if(status)status.textContent='Screenshot und Textangaben wurden in das Produktformular übertragen. Bitte Name, Preis und Beschreibung kontrollieren und anschließend speichern.';
+ $('#productFormPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
+ toast('Screenshotdaten zur Prüfung übernommen.');
 }
 function showProductForm(productId=null){
  const panel=$('#productFormPanel'), form=$('#productForm'); if(!panel||!form)return;
@@ -376,6 +440,7 @@ async function saveProduct(event){
  let imageDataUrl=existing?.imageDataUrl||'';
  const imageFile=form.elements.productImage.files?.[0];
  if(imageFile){if(!imageFile.type.startsWith('image/')||imageFile.size>5*1024*1024){toast('Bild muss ein Bildformat sein und darf höchstens 5 MB groß sein.');return;}imageDataUrl=await readFileAsDataUrl(imageFile);}
+ if(pendingScreenshotDataUrl)imageDataUrl=pendingScreenshotDataUrl;
  const p={
   ...(existing||{}),id:id||crypto.randomUUID(),workspaceId:state.workspaceId,name,
   merchant:String(data.get('merchant')||'').trim(),url:String(data.get('url')||'').trim(),
@@ -392,7 +457,7 @@ async function saveProduct(event){
  };
  if(existing){state.products=state.products.map(x=>x.id===id?p:x);await db.put('products',p);log('Produkt bearbeitet',p.name);}
  else{state.products.push(p);await db.put('products',p);log('Produkt erfasst',p.name);}
- state.selectedProductId=p.id;hideProductForm();renderPage();toast(existing?'Produkt aktualisiert.':'Produkt lokal gespeichert.');
+ state.selectedProductId=p.id;pendingScreenshotDataUrl='';clearScreenshotImport();hideProductForm();renderPage();toast(existing?'Produkt aktualisiert.':'Produkt lokal gespeichert.');
 }
 async function runLocalProductAnalysis(id){
  const p=state.products.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!p)return;
