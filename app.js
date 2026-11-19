@@ -39,8 +39,23 @@ function overview(){
 function productsPage(){
  header('Produkte','RECHERCHE & PRODUKTDATENBANK'); const items=scoped(state.products);
  return `<div class="page-toolbar"><div><h2>Produktbibliothek</h2><p>Produkte erfassen, strukturieren und für Content-Projekte vorbereiten.</p></div><button class="button button-primary" id="addProduct">＋ Produkt erfassen</button></div>
- ${items.length?`<div class="table-wrap"><table><thead><tr><th>Produkt</th><th>Händler</th><th>Preis</th><th>Status</th><th>Erfasst</th></tr></thead><tbody>${items.map(p=>`<tr><td><strong>${esc(p.name)}</strong><small>${esc(p.url||'Kein Produktlink')}</small></td><td>${esc(p.merchant||'—')}</td><td>${p.price?money(p.price):'Nicht bestätigt'}</td><td><span class="status-tag">${esc(p.status||'Neu')}</span></td><td>${new Date(p.createdAt).toLocaleDateString('de-DE')}</td></tr>`).join('')}</tbody></table></div>`:empty('Noch keine Produkte','Erfasse ein Produkt manuell. Später ergänzen wir geprüfte Importwege und Quellenverfolgung.','<button class="button button-primary" id="addProductEmpty">＋ Erstes Produkt erfassen</button>')}
- <div class="notice"><strong>Wichtig</strong><span>Preise und Produkteigenschaften gelten erst dann als verifiziert, wenn eine belastbare Quelle mit Abrufdatum hinterlegt wurde.</span></div>`;
+ <section class="panel product-form-panel" id="productFormPanel" hidden>
+   <div class="panel-head"><div><h3>Neues Produkt erfassen</h3><p>Pflichtfeld: Produktname. Nicht bestätigte Angaben bleiben entsprechend gekennzeichnet.</p></div><button class="icon-button" id="closeProductForm" type="button" aria-label="Formular schließen">✕</button></div>
+   <form id="productForm" class="data-form">
+     <label>Produktname *<input name="name" required maxlength="160" placeholder="z. B. Akku-Bohrschrauber"></label>
+     <div class="form-grid">
+       <label>Händler / Plattform<input name="merchant" maxlength="100" placeholder="z. B. Amazon"></label>
+       <label>Aktueller Preis in EUR<input name="price" inputmode="decimal" placeholder="z. B. 49,99"></label>
+     </div>
+     <label>Produktlink<input name="url" type="url" placeholder="https://..."></label>
+     <label>Quellenlink für Preis / Eigenschaften<input name="sourceUrl" type="url" placeholder="Herstellerseite oder Händlerquelle"></label>
+     <label>Produktbeschreibung<textarea name="description" rows="3" maxlength="2000" placeholder="Bekannte Eigenschaften und Hinweise"></textarea></label>
+     <div class="form-actions"><button class="button button-secondary" id="cancelProductForm" type="button">Abbrechen</button><button class="button button-primary" type="submit">Produkt lokal speichern</button></div>
+     <p class="form-hint">Ein eingetragener Preis ist zunächst nicht verifiziert. Quellenlink und Erfassungszeitpunkt werden mitgespeichert; eine automatische Quellenprüfung ist noch nicht angebunden.</p>
+   </form>
+ </section>
+ ${items.length?`<div class="table-wrap"><table><thead><tr><th>Produkt</th><th>Händler</th><th>Preis</th><th>Status</th><th>Erfasst</th></tr></thead><tbody>${items.map(p=>`<tr><td><strong>${esc(p.name)}</strong><small>${esc(p.url||'Kein Produktlink')}</small></td><td>${esc(p.merchant||'—')}</td><td>${p.price!==null&&p.price!==undefined?money(p.price):'Nicht angegeben'}</td><td><span class="status-tag">${esc(p.status||'Neu')}</span></td><td>${new Date(p.createdAt).toLocaleDateString('de-DE')}</td></tr>`).join('')}</tbody></table></div>`:empty('Noch keine Produkte','Erfasse ein Produkt über das Formular. Quellen und Preise werden getrennt als bestätigt oder ungeprüft behandelt.')}
+ <div class="notice"><strong>Wichtig</strong><span>Preise und Produkteigenschaften gelten erst dann als verifiziert, wenn eine belastbare Quelle geprüft und mit Abrufdatum dokumentiert wurde.</span></div>`;
 }
 function contentPage(){
  header('Content-Studio','CONTENT-STRATEGIE'); const items=scoped(state.posts);
@@ -65,17 +80,34 @@ function simplePage(id){
 function renderPage(){
  const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():simplePage(active);
  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
- $('#addProduct')?.addEventListener('click',addProduct); $('#addProductEmpty')?.addEventListener('click',addProduct);
+ $('#addProduct')?.addEventListener('click',showProductForm);
+ $('#closeProductForm')?.addEventListener('click',hideProductForm);
+ $('#cancelProductForm')?.addEventListener('click',hideProductForm);
+ $('#productForm')?.addEventListener('submit',saveProduct);
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
 }
-async function addProduct(){
- const name=prompt('Produktname:'); if(!name?.trim()) return;
- const merchant=prompt('Händler / Plattform (optional):')||'';
- const url=prompt('Produktlink (optional):')||'';
- const priceRaw=prompt('Aktueller Preis in EUR (leer lassen, wenn nicht bestätigt):')||'';
- const price=priceRaw.trim() && Number.isFinite(Number(priceRaw.replace(',','.')))?Number(priceRaw.replace(',','.')):null;
- const p={id:crypto.randomUUID(),workspaceId:state.workspaceId,name:name.trim(),merchant,url,price,status:'Neu',createdAt:new Date().toISOString()};
- state.products.push(p); await db.put('products',p); log('Produkt erfasst',p.name); renderPage(); toast('Produkt lokal gespeichert.');
+function showProductForm(){
+ const panel=$('#productFormPanel'); if(panel){panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'});panel.querySelector('[name="name"]')?.focus();}
+}
+function hideProductForm(){const panel=$('#productFormPanel');if(panel)panel.hidden=true;}
+async function saveProduct(event){
+ event.preventDefault();
+ const form=event.currentTarget, data=new FormData(form);
+ const name=String(data.get('name')||'').trim();
+ if(!name){toast('Bitte einen Produktnamen eingeben.');return;}
+ const rawPrice=String(data.get('price')||'').trim().replace(',','.');
+ let price=null;
+ if(rawPrice){price=Number(rawPrice);if(!Number.isFinite(price)||price<0){toast('Bitte einen gültigen Preis eingeben.');return;}}
+ const url=String(data.get('url')||'').trim(), sourceUrl=String(data.get('sourceUrl')||'').trim();
+ const p={
+  id:crypto.randomUUID(),workspaceId:state.workspaceId,name,
+  merchant:String(data.get('merchant')||'').trim(),url,sourceUrl,
+  price,description:String(data.get('description')||'').trim(),
+  priceVerified:false,sourceCheckedAt:null,status:'Neu',
+  createdAt:new Date().toISOString()
+ };
+ state.products.push(p);await db.put('products',p);log('Produkt erfasst',p.name);
+ renderPage();toast('Produkt lokal gespeichert.');
 }
 async function addPost(){
  const title=prompt('Titel des Content-Entwurfs:'); if(!title?.trim()) return;
