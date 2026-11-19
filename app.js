@@ -401,7 +401,7 @@ function clearScreenshotImport(){
  if(status)status.textContent='Import zurückgesetzt. Du kannst bis zu 8 neue Screenshots auswählen.';
 }
 function parseScreenshotText(raw){
- const lines=String(raw||'').split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+ const lines=String(raw||'').split(/\r?\n/).map(x=>x.trim()).filter(x=>Boolean(x)&&!/^---\s.*\s---$/.test(x));
  const priceMatch=String(raw||'').match(/(?:€\s*)?(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|EUR)(?![A-Za-z])|\bEUR\s*(\d{1,4}(?:[.,]\d{1,2})?)/i);
  let price=null;
  if(priceMatch){const token=priceMatch[1]||priceMatch[2];const n=Number(token.replace(',','.'));if(Number.isFinite(n))price=n;}
