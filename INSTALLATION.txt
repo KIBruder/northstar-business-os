@@ -1,0 +1,18 @@
+NORTHSTAR 0.4 – gebündeltes Funktionsupdate
+
+GitHub Upload:
+1. ZIP entpacken.
+2. Die fünf enthaltenen Dateien direkt im Repository-Hauptverzeichnis hochladen.
+3. Gleichnamige Dateien ersetzen und Commit changes ausführen.
+4. Danach Northstar neu laden. Falls alte Oberfläche bleibt, App vollständig schließen und erneut öffnen.
+
+Neue Funktionen:
+- Produkte öffnen, bearbeiten, löschen (mit Bestätigungsdialog)
+- Produktsuche
+- Produktdetails und Statusverwaltung
+- Lokale regelbasierte Basisanalyse mit Vollständigkeitswert, Lücken, Verkaufsansätzen und drei Hook-Entwürfen
+- Content-Projekt aus Produkt erstellen; Produktverknüpfung und Hook-Ideen werden übernommen
+- Neuer Service-Worker-Cache
+
+Wichtig:
+Die Basisanalyse ist eine lokale, deterministische Regelanalyse. Sie ist KEINE externe KI-Recherche und prüft keine Live-Preise. Der Wert ist ein Datenvollständigkeitswert, keine Verkaufsprognose. Produktdatenbank bleibt IndexedDB Version 1; vorhandene Produkte werden nicht gelöscht.
