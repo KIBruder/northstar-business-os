@@ -8,7 +8,7 @@ const sections = [
   ['documents','Dokumente','▧'],['reports','Managementberichte','▥'],['settings','Einstellungen','⚙']
 ];
 let active = 'overview';
-let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, productSearch: '' };
+let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
 
 const $ = (s, root=document) => root.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -52,10 +52,22 @@ function productsPage(){
  });
  const selected=state.products.find(p=>p.id===state.selectedProductId && p.workspaceId===state.workspaceId);
  return `<div class="page-toolbar"><div><h2>Produktbibliothek</h2><p>Produkte erfassen, verwalten und durch den gesamten Content-Prozess führen.</p></div><button class="button button-primary" id="addProduct">＋ Produkt erfassen</button></div>
+ <section class="panel link-import-panel" id="linkImportPanel">
+   <div class="panel-head"><div><h3>Produkt per Link importieren</h3><p>TikTok, Amazon, eBay und weitere Shops erkennen.</p></div><span class="status-tag">Link-Import</span></div>
+   <div class="link-import-controls">
+     <input id="productImportUrl" type="url" inputmode="url" placeholder="Produktlink hier einfügen …" autocomplete="url">
+     <button class="button button-primary" id="inspectProductLink" type="button">Link erkennen</button>
+   </div>
+   <div id="linkImportResult" class="link-import-result" aria-live="polite"><span>Füge einen Produktlink ein. Northstar erkennt Shop und Linktyp und übernimmt die Adresse in die Produktakte.</span></div>
+   <p class="form-hint">Hinweis: Shop-Seiten blockieren häufig den automatischen Datenabruf. Die Linkerkennung funktioniert lokal; Produktname, Preis, Bilder und Merkmale werden nur übernommen, wenn sie tatsächlich aus einer zugänglichen Quelle ausgelesen werden können. In dieser Version erfolgt noch kein Live-Scraping.</p>
+ </section>
  <section class="panel product-form-panel" id="productFormPanel" hidden>
    <div class="panel-head"><div><h3 id="productFormTitle">Neues Produkt erfassen</h3><p>Produktdaten bleiben lokal in diesem Arbeitsbereich gespeichert.</p></div><button class="icon-button" id="closeProductForm" type="button" aria-label="Formular schließen">✕</button></div>
    <form id="productForm" class="data-form">
      <input type="hidden" name="id">
+     <input type="hidden" name="importPlatform">
+     <input type="hidden" name="importProductId">
+     <input type="hidden" name="importStatus">
      <label>Produktname *<input name="name" required maxlength="160" placeholder="z. B. Akku-Bohrschrauber"></label>
      <div class="form-grid">
        <label>Händler / Plattform<input name="merchant" maxlength="100" placeholder="z. B. Amazon"></label>
@@ -117,8 +129,67 @@ function productDetail(p){
 function contentPage(){
  header('Content-Studio','CONTENT-STRATEGIE'); const items=scoped(state.posts);
  const linkedProduct=post=>state.products.find(x=>x.id===post.productId);
- return `<div class="page-toolbar"><div><h2>Content-Projekte</h2><p>Entwürfe aus deinen Produkten und Kampagnen.</p></div><button class="button button-primary" id="addPost">＋ Entwurf anlegen</button></div>
- ${items.length?`<div class="project-list">${items.map(p=>{const product=linkedProduct(p);return `<article class="project-card"><div class="project-symbol">▤</div><div class="project-main"><strong>${esc(p.title)}</strong><small>${esc(p.channel)} · ${esc(p.strategy)} · ${new Date(p.createdAt).toLocaleDateString('de-DE')}</small>${product?`<small class="linked-product">Verknüpft mit: ${esc(product.name)}</small>`:''}${p.hooks?.length?`<ol class="content-hooks">${p.hooks.map(h=>`<li>${esc(h)}</li>`).join('')}</ol>`:''}</div><span class="status-tag">${esc(p.status)}</span></article>`}).join('')}</div>`:empty('Noch keine Content-Entwürfe','Öffne ein Produkt und wähle „Content-Projekt anlegen“, um die Analyse und Hook-Ideen zu übernehmen.','<button class="button button-primary" id="addPostEmpty">＋ Ersten Entwurf anlegen</button>')}`;
+ const selected=items.find(x=>x.id===state.selectedPostId);
+ return `<div class="page-toolbar"><div><h2>Content-Projekte</h2><p>Aus Produktdaten werden strukturierte Content-Entwürfe.</p></div><button class="button button-primary" id="addPost">＋ Entwurf anlegen</button></div>
+ ${items.length?`<div class="project-list">${items.map(p=>{const product=linkedProduct(p);return `<article class="project-card"><div class="project-symbol">▤</div><div class="project-main"><strong>${esc(p.title)}</strong><small>${esc(p.channel||'TikTok')} · ${esc(p.strategy||'BOFU')} · ${new Date(p.createdAt).toLocaleDateString('de-DE')}</small>${product?`<small class="linked-product">Verknüpft mit: ${esc(product.name)}</small>`:''}${p.draft?`<small class="status-tag">Carousel-Entwurf vorhanden</small>`:''}<div class="project-actions"><button class="button button-secondary" data-post-action="open" data-id="${p.id}">Öffnen</button><button class="button button-danger" data-post-action="delete" data-id="${p.id}">Löschen</button></div></div><span class="status-tag">${esc(p.status||'Entwurf')}</span></article>`}).join('')}</div>`:empty('Noch keine Content-Entwürfe','Öffne ein Produkt und lege daraus ein Content-Projekt an.','<button class="button button-primary" id="addPostEmpty">＋ Ersten Entwurf anlegen</button>')}
+ ${selected?contentDetail(selected,linkedProduct(selected)):''}
+ <div class="notice"><strong>Produktionshinweis</strong><span>Der Carousel-Entwurf enthält Textstruktur und Dramaturgie. Bilder, Preisprüfung und Veröffentlichung sind separate Schritte und werden nicht automatisch vorgetäuscht.</span></div>`;
+}
+function contentDetail(post,product){
+ const draft=post.draft;
+ return `<section class="panel content-detail" id="contentDetail">
+  <div class="panel-head"><div><h3>${esc(post.title)}</h3><p>${product?`Produkt: ${esc(product.name)}`:'Manueller Entwurf'} · ${esc(post.channel||'TikTok')}</p></div><button class="icon-button" id="closeContentDetail" type="button">✕</button></div>
+  ${draft?`<div class="draft-meta"><span class="status-tag">${esc(draft.strategy||'BOFU')}</span><span class="subtle">5-Slide-Textentwurf · ${new Date(draft.createdAt).toLocaleString('de-DE')}</span></div>
+  <div class="carousel-draft">${draft.slides.map((slide,i)=>`<article class="draft-slide"><div class="draft-slide-top"><strong>Slide ${i+1} von ${draft.slides.length}</strong><span>${esc(slide.role)}</span></div><h4>${esc(slide.headline)}</h4><p>${esc(slide.body)}</p><small>${esc(slide.visualNote)}</small></article>`).join('')}</div>
+  <div class="detail-block"><span>Caption-Entwurf</span><p>${esc(draft.caption)}</p></div>
+  <div class="detail-block"><span>Hashtag-Entwurf</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
+  <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Text kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Entwurf neu erstellen</button></div>
+  `:`<div class="empty-state compact"><h3>Noch kein Carousel-Text erstellt</h3><p>Erstelle aus den gespeicherten Produktangaben einen ersten 5-Slide-Entwurf.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ Carousel-Entwurf erstellen</button></div>`}
+ </section>`;
+}
+async function handlePostAction(action,id){
+ const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
+ if(action==='open'){state.selectedPostId=id;renderPage();$('#contentDetail')?.scrollIntoView({behavior:'smooth',block:'start'});return;}
+ if(action==='delete'){
+  if(!confirm(`Content-Entwurf „${post.title}“ wirklich löschen? Das verknüpfte Produkt bleibt erhalten.`))return;
+  state.posts=state.posts.filter(x=>x.id!==id);await db.delete('posts',id);
+  if(state.selectedPostId===id)state.selectedPostId=null;
+  log('Content-Entwurf gelöscht',post.title);renderPage();toast('Content-Entwurf gelöscht.');
+ }
+}
+async function generateContentDraft(postId){
+ const post=state.posts.find(x=>x.id===postId && x.workspaceId===state.workspaceId);if(!post)return;
+ const product=state.products.find(x=>x.id===post.productId && x.workspaceId===state.workspaceId);
+ if(!product){toast('Für diesen Entwurf ist kein Produkt verknüpft.');return;}
+ const panel=$('#contentDetail');
+ if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>Content-Entwurf wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten werden geprüft</li><li id="genStep2">Slide-Dramaturgie wird aufgebaut</li><li id="genStep3">Caption und Hashtags werden erstellt</li><li id="genStep4">Entwurf wird lokal gespeichert</li></ol></div>`);}
+ const setStep=(n,width)=>{const bar=$('#generationBar');if(bar)bar.style.width=width+'%';const step=$(`#genStep${n}`);if(step)step.classList.add('step-done');};
+ setStep(1,28);await new Promise(r=>setTimeout(r,220));
+ const name=product.name;
+ const description=String(product.description||'').trim();
+ const hooks=product.analysis?.hooks||[`Das solltest du vor dem Kauf von ${name} wissen`,`Für wen lohnt sich ${name} wirklich?`,`Diese Punkte solltest du bei ${name} prüfen`];
+ const angles=product.analysis?.angles||[];
+ setStep(2,52);await new Promise(r=>setTimeout(r,220));
+ const safeBenefit=description?description.split(/[.!?\\n]/).map(x=>x.trim()).filter(Boolean)[0]:'Noch kein belegter Produktvorteil hinterlegt. Ergänze Produktmerkmale, bevor konkrete Vorteile beworben werden.';
+ const slides=[
+  {role:'Hook / Scroll-Stopper',headline:hooks[0],body:'Kurzer Einstieg. Noch keine unbelegten Produkteigenschaften behaupten.',visualNote:'Authentisches Produktbild oder passendes Reaktionsmotiv; Text kurz halten.'},
+  {role:'Problem / Bedarf',headline:`Suchst du eine passende Lösung rund um ${name}?`,body:'Zeige die konkrete Alltagssituation deiner Zielgruppe. Keine erfundenen Versprechen.',visualNote:'Problem- oder Anwendungssituation zeigen.'},
+  {role:'Produkt / belegbare Information',headline:'Was bisher über das Produkt bekannt ist',body:safeBenefit,visualNote:'Originalprodukt klar und unverfälscht zeigen. Fehlende Merkmale erst recherchieren.'},
+  {role:'Kaufentscheidung / Vertrauen',headline:'Das solltest du vor dem Kauf prüfen',body:product.sourceUrl?'Quelle ist hinterlegt, wurde aber noch nicht unabhängig geprüft. Preis, Varianten und technische Daten vor Veröffentlichung kontrollieren.':'Noch keine belastbare Quelle hinterlegt. Preis, Varianten und technische Daten vor Veröffentlichung recherchieren.',visualNote:'Detailaufnahme; nur nachgewiesene Eigenschaften beschriften.'},
+  {role:'CTA / Abschluss',headline:`Mehr Details zu ${name} ansehen`,body:'Prüfe Preis, Verfügbarkeit und Produktdetails beim Händler. Affiliate-Hinweis vor Veröffentlichung ergänzen, falls zutreffend.',visualNote:'Produktbild mit ruhigem, eindeutigem Call-to-Action.'}
+ ];
+ setStep(3,78);await new Promise(r=>setTimeout(r,220));
+ post.draft={strategy:post.strategy||'BOFU',slides,caption:`${name}: Diese Punkte solltest du vor dem Kauf prüfen. Produktdetails und aktuelle Konditionen beim Händler ansehen.`,hashtags:['#musthave','#produkttipp','#shopping','#vergleich','#affiliate'],createdAt:new Date().toISOString(),sourceType:'local-template-v1',notes:angles};
+ post.status='Textentwurf erstellt';post.updatedAt=new Date().toISOString();
+ await db.put('posts',post);log('Carousel-Textentwurf erstellt',`${post.title} · 5 Slides`);
+ setStep(4,100);await new Promise(r=>setTimeout(r,180));
+ state.selectedPostId=post.id;renderPage();toast('5-Slide-Textentwurf gespeichert.');
+}
+function copyContentDraft(){
+ const post=state.posts.find(x=>x.id===state.selectedPostId);if(!post?.draft)return;
+ const d=post.draft;
+ const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.visualNote}`),'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
+ if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Content-Text kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
 }
 const simplePages = {
  production:['Produktion','PRODUKTIONSSTEUERUNG','Bild- und Videoaufträge, Qualitätskontrolle und Export werden hier zentral gesteuert.','Die Generatoren werden erst angebunden, wenn kostenlose oder ausdrücklich freigegebene Werkzeuge technisch geprüft sind.'],
@@ -139,6 +210,9 @@ function renderPage(){
  const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():simplePage(active);
  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
  $('#addProduct')?.addEventListener('click',()=>showProductForm());
+ $('#inspectProductLink')?.addEventListener('click',inspectProductLink);
+ $('#productImportUrl')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();inspectProductLink();}});
+
  $('#closeProductForm')?.addEventListener('click',hideProductForm);
  $('#cancelProductForm')?.addEventListener('click',hideProductForm);
  $('#productForm')?.addEventListener('submit',saveProduct);
@@ -150,12 +224,75 @@ function renderPage(){
  $('#editFromDetails')?.addEventListener('click',()=>showProductForm(state.selectedProductId));
  $('#createContentFromProduct')?.addEventListener('click',()=>createContentFromProduct(state.selectedProductId));
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
+ document.querySelectorAll('[data-post-action]').forEach(b=>b.addEventListener('click',()=>handlePostAction(b.dataset.postAction,b.dataset.id)));
+ $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
+ $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
+ $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
+ $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
+}
+function classifyProductUrl(raw){
+ let u;
+ try{u=new URL(String(raw||'').trim());}catch{return {ok:false,message:'Bitte einen vollständigen Link mit https:// einfügen.'};}
+ if(!['http:','https:'].includes(u.protocol))return {ok:false,message:'Nur http- und https-Links werden unterstützt.'};
+ const host=u.hostname.toLowerCase().replace(/^www\./,'');
+ let platform='Anderer Shop',merchant='Anderer Shop',shortLink=false,productId='';
+ if(host==='vm.tiktok.com'||host==='vt.tiktok.com'||host==='tiktok.com'||host.endsWith('.tiktok.com')){
+   platform='TikTok';merchant='TikTok Shop';shortLink=host==='vm.tiktok.com'||host==='vt.tiktok.com';
+   productId=(u.pathname.match(/\/(?:view\/)?(\d{8,})/)||[])[1]||'';
+ }else if(host==='amzn.to'||host.endsWith('.amazon.com')||host.endsWith('.amazon.de')||host.endsWith('.amazon.co.uk')||host==='amazon.de'||host==='amazon.com'){
+   platform='Amazon';merchant='Amazon';shortLink=host==='amzn.to';
+   productId=(u.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)||[])[1]||'';
+ }else if(host==='ebay.us'||host.endsWith('.ebay.de')||host.endsWith('.ebay.com')||host==='ebay.de'||host==='ebay.com'){
+   platform='eBay';merchant='eBay';shortLink=host==='ebay.us';
+   productId=(u.pathname.match(/\/itm\/(?:[^/]+\/)?(\d{8,})/)||[])[1]||'';
+ }else if(host.endsWith('.aliexpress.com')||host==='aliexpress.com'){
+   platform='AliExpress';merchant='AliExpress';
+   productId=(u.pathname.match(/\/item\/(\d+)\.html/)||[])[1]||'';
+ }else if(host.endsWith('.temu.com')||host==='temu.com'){
+   platform='Temu';merchant='Temu';
+ }else if(host.endsWith('.walmart.com')||host==='walmart.com'){
+   platform='Walmart';merchant='Walmart';
+ }else if(host.endsWith('.etsy.com')||host==='etsy.com'){
+   platform='Etsy';merchant='Etsy';
+ }else if(host.endsWith('.shopify.com')||host.includes('myshopify.com')){
+   platform='Shopify-Shop';merchant=host;
+ }
+ return {ok:true,url:u.href,host,platform,merchant,shortLink,productId};
+}
+function inspectProductLink(){
+ const input=$('#productImportUrl'), result=$('#linkImportResult');
+ const detected=classifyProductUrl(input?.value||'');
+ if(!detected.ok){if(result)result.innerHTML=`<span class="import-error">${esc(detected.message)}</span>`;return;}
+ const form=$('#productForm');
+ if(!form){toast('Produktformular konnte nicht geöffnet werden.');return;}
+ form.reset();
+ form.elements.id.value='';
+ form.elements.url.value=detected.url;
+ form.elements.sourceUrl.value=detected.url;
+ form.elements.merchant.value=detected.merchant;
+ form.elements.importPlatform.value=detected.platform;
+ form.elements.importProductId.value=detected.productId;
+ form.elements.importStatus.value='Link erkannt – Produktdaten noch nicht ausgelesen';
+ form.elements.name.value='';
+ $('#productFormTitle').textContent='Produktdaten ergänzen';
+ $('#saveProductButton').textContent='Import lokal speichern';
+ const notes=[];
+ notes.push(`Shop erkannt: ${detected.platform}`);
+ notes.push(detected.shortLink?'Kurzlink erkannt – Zieladresse kann wegen Shop-/Browser-Schutz nicht automatisch aufgelöst werden.':'Produktadresse erkannt.');
+ if(detected.productId)notes.push(`Produktkennung erkannt: ${detected.productId}`);
+ notes.push('Produktname, Preis, Bilder und Eigenschaften wurden noch nicht ausgelesen.');
+ if(result)result.innerHTML=`<strong class="import-success">${esc(detected.platform)} erkannt</strong><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><span>Der Link wird in das Formular übernommen. Ergänze mindestens den Produktnamen und speichere anschließend.</span>`;
+ const panel=$('#productFormPanel');panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
+ form.elements.name.focus();
 }
 function showProductForm(productId=null){
  const panel=$('#productFormPanel'), form=$('#productForm'); if(!panel||!form)return;
  form.reset();
  const p=productId?state.products.find(x=>x.id===productId):null;
  form.elements.id.value=p?.id||'';
+ form.elements.importPlatform.value=p?.importPlatform||'';
+ form.elements.importProductId.value=p?.importProductId||'';
+ form.elements.importStatus.value=p?.importStatus||'';
  $('#productFormTitle').textContent=p?'Produkt bearbeiten':'Neues Produkt erfassen';
  $('#saveProductButton').textContent=p?'Änderungen speichern':'Produkt lokal speichern';
  if(p){
@@ -180,6 +317,9 @@ async function saveProduct(event){
   merchant:String(data.get('merchant')||'').trim(),url:String(data.get('url')||'').trim(),
   sourceUrl:String(data.get('sourceUrl')||'').trim(),price,
   description:String(data.get('description')||'').trim(),
+  importPlatform:String(data.get('importPlatform')||existing?.importPlatform||'').trim(),
+  importProductId:String(data.get('importProductId')||existing?.importProductId||'').trim(),
+  importStatus:String(data.get('importStatus')||existing?.importStatus||'').trim(),
   priceVerified:existing?.price===price?Boolean(existing.priceVerified):false,
   sourceCheckedAt:existing?.sourceUrl===String(data.get('sourceUrl')||'').trim()?existing.sourceCheckedAt:null,
   status:existing?.status||'Neu',createdAt:existing?.createdAt||new Date().toISOString(),
@@ -222,7 +362,7 @@ async function createContentFromProduct(id){
  const post={id:crypto.randomUUID(),workspaceId:state.workspaceId,productId:p.id,title:p.name,channel:'TikTok',strategy:'BOFU',status:'Entwurf',hooks:p.analysis?.hooks||[],angles:p.analysis?.angles||[],createdAt:new Date().toISOString()};
  state.posts.push(post);await db.put('posts',post);
  p.status='Content geplant';p.updatedAt=new Date().toISOString();await db.put('products',p);
- log('Content-Projekt aus Produkt erstellt',p.name);
+ log('Content-Projekt aus Produkt erstellt',p.name);state.selectedPostId=post.id;
  go('content');toast('Content-Entwurf mit Produktverknüpfung erstellt.');
 }
 async function addPost(){

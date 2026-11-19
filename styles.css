@@ -55,3 +55,30 @@
 .linked-product{color:#8fc2ff!important}
 .content-hooks{margin:8px 0 0;padding-left:18px;color:#b9c9df;font-size:10px;line-height:1.6}
 @media(max-width:520px){.analysis-columns{grid-template-columns:1fr}}
+
+.project-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.project-card{align-items:flex-start}
+.project-main{min-width:0;flex:1}
+.content-detail{border-color:#41648e;margin-top:16px}
+.draft-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}
+.carousel-draft{display:grid;gap:10px;margin:12px 0}
+.draft-slide{background:#101d30;border:1px solid #2b405e;border-radius:10px;padding:13px}
+.draft-slide-top{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#8ea4c2;font-size:10px}
+.draft-slide h4{font-size:14px;line-height:1.4;margin:11px 0 7px;color:#eef4ff}
+.draft-slide p{font-size:12px;line-height:1.55;color:#c5d4e8;margin:0 0 8px}
+.draft-slide small{display:block;font-size:10px;line-height:1.45;color:#8297b4}
+.generation-progress{background:#0e1b2e;border:1px solid #35577e;border-radius:10px;padding:13px;margin-bottom:14px}
+.generation-progress>strong{display:block;margin-bottom:10px}
+.generation-progress ol{margin:10px 0 0;padding-left:20px;color:#8297b4;font-size:11px;line-height:1.9}
+.generation-progress li.step-done{color:#9bc9ff}
+.empty-state.compact{padding:20px}
+@media(max-width:520px){.project-card{align-items:flex-start}.project-actions .button{flex:1}.draft-slide-top{align-items:flex-start;flex-direction:column}}
+
+.link-import-panel{border-color:#35577e;background:#101e33;margin-bottom:14px}
+.link-import-controls{display:flex;gap:9px;align-items:stretch}
+.link-import-controls input{flex:1;min-width:0;background:#0d192b;border:1px solid #2b405e;border-radius:8px;padding:11px 12px;color:#eef4ff;font:inherit;font-size:12px}
+.link-import-result{margin-top:11px;padding:12px;background:#0d192b;border:1px solid #243954;border-radius:8px;color:#b9c9df;font-size:11px;line-height:1.55}
+.link-import-result ul{margin:7px 0;padding-left:18px}
+.import-success{color:#8fc2ff}
+.import-error{color:#ff9eae}
+@media(max-width:520px){.link-import-controls{flex-direction:column}.link-import-controls .button{width:100%}}

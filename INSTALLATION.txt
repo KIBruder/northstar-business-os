@@ -1,18 +1,19 @@
-NORTHSTAR 0.4 – gebündeltes Funktionsupdate
+NORTHSTAR 0.6 – MULTI-SHOP LINK-IMPORT
 
-GitHub Upload:
+Dateien: app.js, styles.css, sw.js
+
+Installation:
 1. ZIP entpacken.
-2. Die fünf enthaltenen Dateien direkt im Repository-Hauptverzeichnis hochladen.
-3. Gleichnamige Dateien ersetzen und Commit changes ausführen.
-4. Danach Northstar neu laden. Falls alte Oberfläche bleibt, App vollständig schließen und erneut öffnen.
+2. Alle drei Dateien in das Hauptverzeichnis des GitHub-Repositories hochladen und gleichnamige Dateien ersetzen.
+3. Commit changes.
+4. PWA schließen und erneut öffnen; falls nötig Seite in Safari neu laden.
 
-Neue Funktionen:
-- Produkte öffnen, bearbeiten, löschen (mit Bestätigungsdialog)
-- Produktsuche
-- Produktdetails und Statusverwaltung
-- Lokale regelbasierte Basisanalyse mit Vollständigkeitswert, Lücken, Verkaufsansätzen und drei Hook-Entwürfen
-- Content-Projekt aus Produkt erstellen; Produktverknüpfung und Hook-Ideen werden übernommen
-- Neuer Service-Worker-Cache
+Funktionen:
+- URL-Erkennung für TikTok/TikTok Shop, Amazon, eBay, AliExpress, Temu, Walmart, Etsy, Shopify und allgemeine Shops.
+- Erkennung bekannter Kurzlink-Domains.
+- Extraktion von Produktkennungen aus typischen Produktpfaden, wenn vorhanden.
+- Link, erkannter Shop und erkannte Produktkennung werden in der Produktakte gespeichert.
+- Sicherheitsprüfung auf http/https.
 
-Wichtig:
-Die Basisanalyse ist eine lokale, deterministische Regelanalyse. Sie ist KEINE externe KI-Recherche und prüft keine Live-Preise. Der Wert ist ein Datenvollständigkeitswert, keine Verkaufsprognose. Produktdatenbank bleibt IndexedDB Version 1; vorhandene Produkte werden nicht gelöscht.
+Wichtige Einschränkung:
+Dies ist eine lokale Link- und Plattform-Erkennung, kein Live-Scraper. TikTok, Amazon, eBay und andere Shops schützen Produktseiten oft vor Browserzugriff (CORS, Login, Bot-Schutz, dynamische Inhalte). In dieser Version werden Produktname, Preis, Bilder und Eigenschaften NICHT automatisch aus der Shop-Seite ausgelesen. Diese Felder müssen ergänzt werden. Kurzlink-Zieladressen werden nicht automatisch aufgelöst. Keine Preisangabe wird als verifiziert markiert.
