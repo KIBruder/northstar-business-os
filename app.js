@@ -76,13 +76,16 @@ function productsPage(){
      <label>Produktlink<input name="url" type="url" placeholder="https://..."></label>
      <label>Quellenlink für Preis / Eigenschaften<input name="sourceUrl" type="url" placeholder="Herstellerseite oder Händlerquelle"></label>
      <label>Produktbeschreibung<textarea name="description" rows="3" maxlength="2000" placeholder="Bekannte Eigenschaften und Hinweise"></textarea></label>
+     <label>Produktbild oder Screenshot<input name="productImage" type="file" accept="image/*"></label>
+     <div id="productImagePreview" class="product-image-preview" hidden></div>
+     <label>Bild-URL (falls aus einer zugänglichen Produktseite ausgelesen)<input name="imageUrl" type="url" placeholder="https://..."></label>
      <div class="form-actions"><button class="button button-secondary" id="cancelProductForm" type="button">Abbrechen</button><button class="button button-primary" type="submit" id="saveProductButton">Produkt lokal speichern</button></div>
      <p class="form-hint">Preis- und Produktangaben werden nicht automatisch verifiziert. Quellenlinks werden gespeichert; eine Live-Quellenprüfung ist noch nicht angebunden.</p>
    </form>
  </section>
  <div class="product-toolbar"><input id="productSearch" class="search-input" type="search" placeholder="Produkte suchen …" value="${esc(state.productSearch)}"><span class="result-count">${items.length} von ${scoped(state.products).length} Produkten</span></div>
  ${items.length?`<div class="product-list">${items.map(p=>`<article class="product-card">
-   <div class="product-card-main"><div class="product-card-heading"><div><strong>${esc(p.name)}</strong><small>${esc(p.merchant||'Händler nicht angegeben')} · ${p.price!==null&&p.price!==undefined?money(p.price):'Preis nicht angegeben'}</small></div><span class="status-tag">${esc(p.status||'Neu')}</span></div>
+   <div class="product-card-main">${p.imageDataUrl?`<img class="product-thumb" src="${p.imageDataUrl}" alt="Produktbild">`:p.imageUrl?`<img class="product-thumb" src="${esc(p.imageUrl)}" alt="Produktbild" loading="lazy">`:''}<div class="product-card-heading"><div><strong>${esc(p.name)}</strong><small>${esc(p.merchant||'Händler nicht angegeben')} · ${p.price!==null&&p.price!==undefined?money(p.price):'Preis nicht angegeben'}</small></div><span class="status-tag">${esc(p.status||'Neu')}</span></div>
    <small class="product-url">${p.url?esc(p.url):'Kein Produktlink hinterlegt'}</small></div>
    <div class="product-card-actions"><button class="button button-secondary" data-product-action="details" data-id="${p.id}">Öffnen</button><button class="button button-secondary" data-product-action="edit" data-id="${p.id}">Bearbeiten</button><button class="button button-danger" data-product-action="delete" data-id="${p.id}">Löschen</button></div>
  </article>`).join('')}</div>`:empty(state.productSearch?'Keine passenden Produkte':'Noch keine Produkte',state.productSearch?'Passe den Suchbegriff an.':'Erfasse dein erstes Produkt über das Formular.')}
@@ -107,6 +110,7 @@ function productDetail(p){
  const priceState=p.priceVerified?'Als geprüft markiert':'Nicht verifiziert';
  return `<section class="panel product-detail" id="productDetail">
   <div class="panel-head"><div><h3>Produktdetails</h3><p>${esc(p.name)}</p></div><button class="icon-button" id="closeProductDetails" type="button" aria-label="Details schließen">✕</button></div>
+  ${p.imageDataUrl?`<img class="product-detail-image" src="${p.imageDataUrl}" alt="Produktbild">`:p.imageUrl?`<img class="product-detail-image" src="${esc(p.imageUrl)}" alt="Produktbild" loading="lazy">`:''}
   <div class="detail-grid">
    <div><span>Händler</span><strong>${esc(p.merchant||'Nicht angegeben')}</strong></div>
    <div><span>Preis</span><strong>${p.price!==null&&p.price!==undefined?money(p.price):'Nicht angegeben'}</strong></div>
@@ -115,6 +119,7 @@ function productDetail(p){
   </div>
   <div class="detail-block"><span>Produktlink</span><p>${p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)} ↗</a>`:'Kein Produktlink'}</p></div>
   <div class="detail-block"><span>Quelle</span><p>${evidence}</p></div>
+  ${p.importStatus?`<div class="detail-block"><span>Importstatus</span><p>${esc(p.importStatus)}</p></div>`:''}
   <div class="detail-block"><span>Beschreibung</span><p>${esc(p.description||'Keine Beschreibung hinterlegt')}</p></div>
   <label class="status-editor">Arbeitsstatus<select id="productStatus" data-id="${p.id}">${productStatusOptions(p.status)}</select></label>
   <div class="detail-actions">
@@ -216,6 +221,8 @@ function renderPage(){
  $('#closeProductForm')?.addEventListener('click',hideProductForm);
  $('#cancelProductForm')?.addEventListener('click',hideProductForm);
  $('#productForm')?.addEventListener('submit',saveProduct);
+ $('#productForm [name="productImage"]')?.addEventListener('change',previewProductImage);
+
  $('#productSearch')?.addEventListener('input',e=>{state.productSearch=e.target.value;const pos=e.target.selectionStart;renderPage();const next=$('#productSearch');next?.focus();next?.setSelectionRange(pos,pos);});
  document.querySelectorAll('[data-product-action]').forEach(b=>b.addEventListener('click',()=>handleProductAction(b.dataset.productAction,b.dataset.id)));
  $('#closeProductDetails')?.addEventListener('click',()=>{state.selectedProductId=null;renderPage();});
@@ -281,7 +288,8 @@ function inspectProductLink(){
  notes.push(detected.shortLink?'Kurzlink erkannt – Zieladresse kann wegen Shop-/Browser-Schutz nicht automatisch aufgelöst werden.':'Produktadresse erkannt.');
  if(detected.productId)notes.push(`Produktkennung erkannt: ${detected.productId}`);
  notes.push('Produktname, Preis, Bilder und Eigenschaften wurden noch nicht ausgelesen.');
- if(result)result.innerHTML=`<strong class="import-success">${esc(detected.platform)} erkannt</strong><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><span>Der Link wird in das Formular übernommen. Ergänze mindestens den Produktnamen und speichere anschließend.</span>`;
+ if(result)result.innerHTML=`<strong class="import-success">${esc(detected.platform)} erkannt</strong><ul>${notes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><button class="button button-secondary" id="fetchProductMetadata" type="button">Produktdatenabruf versuchen</button><span class="form-hint">Der Abruf funktioniert nur, wenn der Shop den Browserzugriff erlaubt. Bei einer Sperre kannst du Screenshot oder Angaben manuell ergänzen.</span>`;
+ $('#fetchProductMetadata')?.addEventListener('click',()=>fetchProductMetadata(detected.url));
  const panel=$('#productFormPanel');panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'});
  form.elements.name.focus();
 }
@@ -298,11 +306,64 @@ function showProductForm(productId=null){
  if(p){
   form.elements.name.value=p.name||'';form.elements.merchant.value=p.merchant||'';
   form.elements.price.value=p.price??'';form.elements.url.value=p.url||'';
-  form.elements.sourceUrl.value=p.sourceUrl||'';form.elements.description.value=p.description||'';
+  form.elements.sourceUrl.value=p.sourceUrl||'';form.elements.description.value=p.description||'';form.elements.imageUrl.value=p.imageUrl||'';
+  const preview=$('#productImagePreview');if(preview&&p.imageDataUrl){preview.hidden=false;preview.innerHTML=`<img src="${p.imageDataUrl}" alt="Aktuelles Produktbild">`;}
  }
  panel.hidden=false;panel.scrollIntoView({behavior:'smooth',block:'start'});panel.querySelector('[name="name"]')?.focus();
 }
 function hideProductForm(){const panel=$('#productFormPanel');if(panel)panel.hidden=true;}
+function readFileAsDataUrl(file){
+ return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(reader.error||new Error('Datei konnte nicht gelesen werden.'));reader.readAsDataURL(file);});
+}
+async function previewProductImage(event){
+ const file=event.target.files?.[0],box=$('#productImagePreview');if(!box)return;
+ if(!file){box.hidden=true;box.innerHTML='';return;}
+ if(!file.type.startsWith('image/')){toast('Bitte eine Bilddatei auswählen.');event.target.value='';return;}
+ if(file.size>5*1024*1024){toast('Bild ist zu groß. Maximal 5 MB.');event.target.value='';return;}
+ try{const url=await readFileAsDataUrl(file);box.hidden=false;box.innerHTML=`<img src="${url}" alt="Bildvorschau"><span>${esc(file.name)} · ${(file.size/1024).toFixed(0)} KB</span>`;}catch{toast('Bildvorschau fehlgeschlagen.');}
+}
+function extractProductMetadata(html,baseUrl){
+ const doc=new DOMParser().parseFromString(html,'text/html');
+ const meta=(...names)=>{for(const name of names){const el=doc.querySelector(`meta[property="${name}"],meta[name="${name}"]`);if(el?.content?.trim())return el.content.trim();}return '';};
+ let structured=null;
+ for(const el of doc.querySelectorAll('script[type="application/ld+json"]')){
+  try{const parsed=JSON.parse(el.textContent||'null');const queue=Array.isArray(parsed)?parsed:[parsed];for(const item of queue){const candidates=[item,...(item?.['@graph']||[])];structured=candidates.find(x=>String(x?.['@type']||'').toLowerCase().includes('product'))||structured;}}catch{}
+ }
+ const offers=structured?.offers?(Array.isArray(structured.offers)?structured.offers[0]:structured.offers):null;
+ let image=meta('og:image','twitter:image');if(!image&&structured?.image)image=Array.isArray(structured.image)?(typeof structured.image[0]==='string'?structured.image[0]:structured.image[0]?.url):typeof structured.image==='string'?structured.image:structured.image?.url;
+ try{if(image)image=new URL(image,baseUrl).href;}catch{image='';}
+ const name=meta('og:title','twitter:title')||structured?.name||doc.title||'';
+ const description=meta('og:description','description')||structured?.description||'';
+ const rawPrice=meta('product:price:amount','og:price:amount')||offers?.price||'';
+ const currency=meta('product:price:currency','og:price:currency')||offers?.priceCurrency||'';
+ const price=Number(String(rawPrice).replace(',','.'));
+ return {name:String(name).trim(),description:String(description).trim(),imageUrl:image,price:Number.isFinite(price)&&rawPrice!==''?price:null,currency,canonical:doc.querySelector('link[rel="canonical"]')?.href||baseUrl};
+}
+async function fetchProductMetadata(url){
+ const button=$('#fetchProductMetadata'),result=$('#linkImportResult');if(button){button.disabled=true;button.textContent='Datenabruf läuft …';}
+ if(result)result.insertAdjacentHTML('beforeend','<p id="metadataProgress" class="import-progress">Produktseite wird angefragt und auf strukturierte Produktdaten geprüft …</p>');
+ try{
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);
+  let response;try{response=await fetch(url,{method:'GET',redirect:'follow',signal:controller.signal,credentials:'omit',headers:{'Accept':'text/html,application/xhtml+xml'}});}finally{clearTimeout(timeout);}
+  if(!response.ok)throw new Error(`Shop antwortet mit HTTP ${response.status}.`);
+  const type=response.headers.get('content-type')||'';if(!type.includes('text/html')&&!type.includes('application/xhtml+xml'))throw new Error('Die Zielseite liefert kein auslesbares HTML.');
+  const html=await response.text();const data=extractProductMetadata(html,response.url||url);
+  const form=$('#productForm');let filled=[];
+  if(data.name&&!form.elements.name.value){form.elements.name.value=data.name;filled.push('Name');}
+  if(data.description&&!form.elements.description.value){form.elements.description.value=data.description.slice(0,2000);filled.push('Beschreibung');}
+  if(data.imageUrl&&!form.elements.imageUrl.value){form.elements.imageUrl.value=data.imageUrl;filled.push('Bild-URL');}
+  if(data.price!==null&&!form.elements.price.value&&(!data.currency||data.currency.toUpperCase()==='EUR')){form.elements.price.value=String(data.price).replace('.',',');filled.push('Preis (unbestätigter Seitenwert)');}
+  if(data.canonical)form.elements.sourceUrl.value=data.canonical;
+  form.elements.importStatus.value=filled.length?'Metadaten aus zugänglicher Seite übernommen – noch zu prüfen':'Seite erreichbar, aber keine verwertbaren Produktmetadaten gefunden';
+  const msg=filled.length?`Abruf erfolgreich. Übernommen: ${filled.join(', ')}. Angaben sind noch nicht unabhängig verifiziert.`:'Die Seite war erreichbar, enthielt aber keine verwertbaren Produktmetadaten.';
+  if(result)result.insertAdjacentHTML('beforeend',`<p class="import-success">${esc(msg)}</p>`);
+  toast(filled.length?'Produktmetadaten übernommen.':'Keine Produktdaten gefunden.');
+ }catch(error){
+  const reason=error.name==='AbortError'?'Zeitüberschreitung beim Abruf.':'Browserzugriff blockiert oder fehlgeschlagen (häufig CORS, Login- oder Bot-Schutz).';
+  if(result)result.insertAdjacentHTML('beforeend',`<p class="import-error">${esc(reason)} Screenshot-Import oder manuelle Ergänzung verwenden.</p>`);
+  toast('Automatischer Abruf nicht möglich.');
+ }finally{if(button){button.disabled=false;button.textContent='Erneut versuchen';}$('#metadataProgress')?.remove();}
+}
 async function saveProduct(event){
  event.preventDefault();
  const form=event.currentTarget, data=new FormData(form);
@@ -312,11 +373,15 @@ async function saveProduct(event){
  let price=null;
  if(rawPrice){price=Number(rawPrice);if(!Number.isFinite(price)||price<0){toast('Bitte einen gültigen Preis eingeben.');return;}}
  const existing=id?state.products.find(x=>x.id===id):null;
+ let imageDataUrl=existing?.imageDataUrl||'';
+ const imageFile=form.elements.productImage.files?.[0];
+ if(imageFile){if(!imageFile.type.startsWith('image/')||imageFile.size>5*1024*1024){toast('Bild muss ein Bildformat sein und darf höchstens 5 MB groß sein.');return;}imageDataUrl=await readFileAsDataUrl(imageFile);}
  const p={
   ...(existing||{}),id:id||crypto.randomUUID(),workspaceId:state.workspaceId,name,
   merchant:String(data.get('merchant')||'').trim(),url:String(data.get('url')||'').trim(),
   sourceUrl:String(data.get('sourceUrl')||'').trim(),price,
   description:String(data.get('description')||'').trim(),
+  imageUrl:String(data.get('imageUrl')||'').trim(),imageDataUrl,
   importPlatform:String(data.get('importPlatform')||existing?.importPlatform||'').trim(),
   importProductId:String(data.get('importProductId')||existing?.importProductId||'').trim(),
   importStatus:String(data.get('importStatus')||existing?.importStatus||'').trim(),

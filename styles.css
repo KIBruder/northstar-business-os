@@ -82,3 +82,10 @@
 .import-success{color:#8fc2ff}
 .import-error{color:#ff9eae}
 @media(max-width:520px){.link-import-controls{flex-direction:column}.link-import-controls .button{width:100%}}
+
+.product-thumb{width:100%;max-height:150px;object-fit:contain;background:#0d192b;border-radius:8px;margin-bottom:10px}
+.product-detail-image{display:block;max-width:100%;max-height:280px;object-fit:contain;margin:0 auto 14px;border-radius:10px;background:#0d192b}
+.product-image-preview{margin-top:8px;padding:10px;border:1px solid #2b405e;border-radius:8px;color:#aebed4;font-size:11px}
+.product-image-preview img{display:block;max-width:100%;max-height:180px;object-fit:contain;margin:0 auto 8px}
+.import-progress{color:#8fc2ff;animation:pulse 1.3s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:.55}to{opacity:1}}

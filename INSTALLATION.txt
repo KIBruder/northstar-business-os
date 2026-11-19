@@ -1,19 +1,8 @@
-NORTHSTAR 0.6 – MULTI-SHOP LINK-IMPORT
+NORTHSTAR 0.7 – METADATENABRUF & BILDIMPORT
 
 Dateien: app.js, styles.css, sw.js
+Installation: ZIP entpacken; die drei Dateien im GitHub-Hauptverzeichnis ersetzen; committen; PWA neu laden.
 
-Installation:
-1. ZIP entpacken.
-2. Alle drei Dateien in das Hauptverzeichnis des GitHub-Repositories hochladen und gleichnamige Dateien ersetzen.
-3. Commit changes.
-4. PWA schließen und erneut öffnen; falls nötig Seite in Safari neu laden.
+Neu: optionaler Browser-Abruf von Open-Graph-/Twitter-Metadaten und JSON-LD Product, Redirect-Follow für Kurzlinks wenn CORS es zulässt, Übernahme von Name/Beschreibung/Bild-URL/Preis als unbestätigte Seitenangaben, Screenshot-/Produktbild-Upload bis 5 MB mit lokaler IndexedDB-Speicherung und Vorschau, Anzeige von Bild und Importstatus.
 
-Funktionen:
-- URL-Erkennung für TikTok/TikTok Shop, Amazon, eBay, AliExpress, Temu, Walmart, Etsy, Shopify und allgemeine Shops.
-- Erkennung bekannter Kurzlink-Domains.
-- Extraktion von Produktkennungen aus typischen Produktpfaden, wenn vorhanden.
-- Link, erkannter Shop und erkannte Produktkennung werden in der Produktakte gespeichert.
-- Sicherheitsprüfung auf http/https.
-
-Wichtige Einschränkung:
-Dies ist eine lokale Link- und Plattform-Erkennung, kein Live-Scraper. TikTok, Amazon, eBay und andere Shops schützen Produktseiten oft vor Browserzugriff (CORS, Login, Bot-Schutz, dynamische Inhalte). In dieser Version werden Produktname, Preis, Bilder und Eigenschaften NICHT automatisch aus der Shop-Seite ausgelesen. Diese Felder müssen ergänzt werden. Kurzlink-Zieladressen werden nicht automatisch aufgelöst. Keine Preisangabe wird als verifiziert markiert.
+Grenzen: Kein Proxy/Backend, kein Umgehen von Login-, CORS- oder Bot-Schutz. Bei blockiertem Abruf bleibt manueller Screenshot-/Datenimport. Preise werden NICHT als verifiziert markiert. Währungsfremde Preise werden nicht in das EUR-Preisfeld übernommen.
