@@ -13,10 +13,13 @@ test('migrates v1 data to v2 stores and persists CRUD across reopen', async () =
   await requestResult(indexedDB.deleteDatabase(DB_NAME));
 
   // Simulate an existing installation created by the previous v1 schema.
-  const legacy = await requestResult(indexedDB.open(DB_NAME, 1));
-  for (const name of ['workspaces', 'products', 'posts', 'activities']) {
-    legacy.createObjectStore(name, { keyPath: 'id' });
-  }
+  const legacyRequest = indexedDB.open(DB_NAME, 1);
+  legacyRequest.onupgradeneeded = () => {
+    for (const name of ['workspaces', 'products', 'posts', 'activities']) {
+      legacyRequest.result.createObjectStore(name, { keyPath: 'id' });
+    }
+  };
+  const legacy = await requestResult(legacyRequest);
   await requestResult(legacy.transaction('workspaces', 'readwrite')
     .objectStore('workspaces').put({ id: 'legacy-workspace', name: 'Existing workspace' }));
   legacy.close();
