@@ -176,7 +176,7 @@ function contentDetail(post,product){
   <section class="media-generation-panel">
    <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">Cloudflare Workers AI · FLUX.2 Klein</span></div>
    <div class="media-connection-grid">
-    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://dein-worker.workers.dev/api/generate-image"></label>
+    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label>
     <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
    </div>
    <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
@@ -241,8 +241,10 @@ async function generateSlideImages(postId){
  const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
  if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
- const images=[product.imageDataUrl,...(product.screenshotDataUrls||[])].filter(x=>typeof x==='string'&&x.startsWith('data:image/')).slice(0,8);
- if(!images.length){toast('Kein gespeichertes Produktbild gefunden.');return;}
+ const referenceSource=[product.imageDataUrl,...(product.screenshotDataUrls||[])].find(x=>typeof x==='string'&&x.startsWith('data:image/'));
+ if(!referenceSource){toast('Kein gespeichertes Produktbild gefunden.');return;}
+ let referenceImage;
+ try{referenceImage=await prepareFluxReferenceImage(referenceSource);}catch(error){toast(error.message||'Referenzbild konnte nicht vorbereitet werden.');return;}
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
  if(button){button.disabled=true;button.textContent='Generierung läuft …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
@@ -251,7 +253,7 @@ async function generateSlideImages(postId){
    if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
    const slide=post.draft.slides[i];
    const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact product. Preserve its original shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images})});
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:[referenceImage]})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
@@ -365,7 +367,7 @@ function renderPage(){
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
  document.querySelectorAll('[data-post-action]').forEach(b=>b.addEventListener('click',()=>handlePostAction(b.dataset.postAction,b.dataset.id)));
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
- if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'';
+ if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
