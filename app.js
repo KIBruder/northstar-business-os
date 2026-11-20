@@ -4,7 +4,7 @@ import { analyzeProductLocally } from './analysis-engine.js';
 const sections = [
   ['overview','Übersicht','▦'],['products','Produkte','◇'],['content','Content-Studio','▤'],
   ['production','Produktion','✦'],['calendar','Planung','▦'],['analytics','Analysen','⌁'],
-  ['finance','Finanzen','€'],['partners','Partnernetzwerk','◎'],['agents','KI-Agenten','⌘'],
+  ['finance','Finanzen','€'],['simulation','90-Tage-Simulation','◷'],['partners','Partnernetzwerk','◎'],['agents','KI-Agenten','⌘'],
   ['documents','Dokumente','▧'],['reports','Managementberichte','▥'],['settings','Einstellungen','⚙']
 ];
 let active = 'overview';
@@ -25,7 +25,7 @@ function log(action, detail=''){ state.activities.unshift({id:crypto.randomUUID(
 function navMarkup(items){return items.map(([id,label,icon])=>`<button class="nav-item ${active===id?'active':''}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');}
 function renderNav(){
   $('#sideNav').innerHTML = `<div class="nav-group-label">ARBEITSPLATZ</div>${navMarkup(sections.slice(0,5))}<div class="nav-group-label">STEUERUNG</div>${navMarkup(sections.slice(5,11))}<div class="nav-group-label">SYSTEM</div>${navMarkup(sections.slice(11))}`;
-  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[5],sections[11]]);
+  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[5],sections[12]]);
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.nav)));
 }
 function go(id){active=id;renderNav();renderPage();$('#sideNav').classList.remove('open');}
@@ -427,6 +427,77 @@ function copyContentDraft(){
  const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.imagePrompt||s.visualNote}`),'',`VOICEOVER\\n${d.videoScript||''}`,'',`VIDEO-SZENEN\\n${(d.videoScenes||[]).map(s=>s.time+' – '+s.visual+' | Overlay: '+s.overlay).join('\\n')}`,'',`VIDEO-PROMPT\\n${d.videoPrompt||''}`,'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
  if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Vollständiges Produktionspaket kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
 }
+
+function simulationPage(){
+ header('90-Tage-Simulation','SELBSTFINANZIERUNG · MODELLRECHNUNG');
+ const defaults={seed:20,cost:2,rev1:0,rev2:0,rev3:0,reserve:3};
+ const fmt=n=>money(n);
+ const calc=(v)=>{
+  let cash=Number(v.seed),months=[];
+  for(let i=1;i<=3;i++){
+   const revenue=Math.max(0,Number(v['rev'+i])||0),cost=Math.max(0,Number(v.cost)||0);
+   const opening=cash,closing=opening+revenue-cost;
+   months.push({month:i,opening,revenue,cost,closing,solvent:closing>=0});
+   cash=closing;
+  }
+  const reserve=Math.max(0,Number(v.reserve)||0);
+  return {months,ending:cash,reserve,available:cash-reserve,breakEven:cash<0?Math.max(0,Math.ceil((Number(v.seed)||0)/(Number(v.cost)||1)*30)):null};
+ };
+ const values={...defaults};
+ const result=calc(values);
+ return `<div class="page-toolbar"><div><h2>Was passiert mit einmalig 20 €?</h2><p>90-Tage-Modell mit frei änderbaren Annahmen. Keine echte Agentenausführung und keine Umsatzprognose.</p></div><span class="status-tag">Simulation · getrennt vom Finanz-Ledger</span></div>
+ <section class="panel simulation-warning"><strong>Wichtig: Das ist ein Planspiel, keine Vorhersage.</strong><p>Northstar führt aktuell noch keine autonomen Agenten aus und erzielt über diese App keine automatischen Affiliate-Einnahmen. Die Einnahmen unten sind deine Szenarioannahmen, keine recherchierten oder garantierten Werte. Die Simulation verändert keine echten Buchungen.</p></section>
+ <section class="panel"><div class="panel-head"><div><h3>Start- und Kostenannahmen</h3><p>Einmaliges Kapital und laufender monatlicher Betriebsaufwand.</p></div></div>
+ <div class="simulation-input-grid">
+  <label>Startkapital (€)<input id="simSeed" type="number" min="0" step="0.01" value="20"></label>
+  <label>Monatliche KI-/Betriebskosten (€)<input id="simCost" type="number" min="0" step="0.01" value="2"></label>
+  <label>Geschützte Reserve (€)<input id="simReserve" type="number" min="0" step="0.01" value="3"></label>
+ </div>
+ <div class="panel-head simulation-month-heading"><div><h3>Erwartete ausgezahlte Provisionen</h3><p>Nur tatsächlich eingegangene Auszahlungen zählen als Einnahmen.</p></div></div>
+ <div class="simulation-input-grid">
+  <label>Monat 1 (€)<input id="simRev1" type="number" min="0" step="0.01" value="0"></label>
+  <label>Monat 2 (€)<input id="simRev2" type="number" min="0" step="0.01" value="0"></label>
+  <label>Monat 3 (€)<input id="simRev3" type="number" min="0" step="0.01" value="0"></label>
+ </div>
+ <div class="detail-actions"><button class="button button-primary" id="runSimulation">90 Tage simulieren</button><button class="button button-secondary" id="simReset">Auf Null-Einnahmen zurücksetzen</button></div>
+ <p class="form-hint">Die Standardannahme ist absichtlich vorsichtig: 0 € Provisionen und 2 € monatliche Kosten. Damit testen wir zuerst, ob das Kapital ohne Einnahmen reicht.</p></section>
+ <section class="panel" id="simulationResult" aria-live="polite">
+  <div class="panel-head"><div><h3>Ergebnis der 90 Tage</h3><p>Ausgangsrechnung mit den Standardannahmen.</p></div></div>
+  <div class="simulation-result-grid">
+   <div class="detail-block"><span>Kapital nach 90 Tagen</span><strong id="simEnding">${fmt(result.ending)}</strong></div>
+   <div class="detail-block"><span>Nach Reserve frei verfügbar</span><strong id="simAvailable">${fmt(result.available)}</strong></div>
+   <div class="detail-block"><span>Summe Provisionen</span><strong id="simRevenue">${fmt(0)}</strong></div>
+   <div class="detail-block"><span>Summe Betriebskosten</span><strong id="simExpenses">${fmt(6)}</strong></div>
+  </div>
+  <div id="simMonths" class="simulation-month-list">
+   ${result.months.map(m=>`<article class="simulation-month"><div><strong>Monat ${m.month}</strong><small>Start ${fmt(m.opening)} · Einnahmen ${fmt(m.revenue)} · Kosten ${fmt(m.cost)}</small></div><strong>${fmt(m.closing)}</strong></article>`).join('')}
+  </div>
+  <div id="simVerdict" class="notice"><strong>Ergebnis</strong><span>Ohne Einnahmen bleiben nach drei Monaten 14,00 € übrig. Das ist nur eine Modellrechnung mit 2 € monatlichen Kosten.</span></div>
+ </section>
+ <section class="panel"><h3>Was die KI in den drei Monaten tun müsste</h3>
+ <div class="simulation-month-list">
+  <article class="simulation-month"><div><strong>Monat 1 · Überleben und testen</strong><small>Günstige/free Infrastruktur nutzen, Affiliate-Zugänge und Regeln prüfen, Produkte recherchieren, erste Inhalte vorbereiten und veröffentlichen, soweit technisch erlaubt.</small></div><span class="status-tag">Validierung</span></article>
+  <article class="simulation-month"><div><strong>Monat 2 · Messen und fokussieren</strong><small>Klicks, Conversion und echte Auszahlungen auswerten. Kanäle ohne messbares Potenzial zurückstufen; keine kostenpflichtige Skalierung ohne Einnahmen.</small></div><span class="status-tag">Optimierung</span></article>
+  <article class="simulation-month"><div><strong>Monat 3 · Eigenfinanzierung prüfen</strong><small>Prüfen, ob realisierte Provisionen laufende Kosten decken. Erst danach Rücklage bilden und einen Teil des Überschusses reinvestieren.</small></div><span class="status-tag">Break-even</span></article>
+ </div></section>`;
+}
+function run90DaySimulation(){
+ const read=id=>Math.max(0,Number($('#'+id)?.value)||0);
+ const v={seed:read('simSeed'),cost:read('simCost'),reserve:read('simReserve'),rev1:read('simRev1'),rev2:read('simRev2'),rev3:read('simRev3')};
+ let cash=v.seed,revenue=0,expenses=0,rows=[];
+ for(let i=1;i<=3;i++){
+  const r=v['rev'+i],opening=cash,closing=opening+r-v.cost;
+  revenue+=r;expenses+=v.cost;cash=closing;
+  rows.push({month:i,opening,revenue:r,cost:v.cost,closing});
+ }
+ const ending=cash,available=ending-v.reserve;
+ $('#simEnding').textContent=money(ending);$('#simAvailable').textContent=money(available);
+ $('#simRevenue').textContent=money(revenue);$('#simExpenses').textContent=money(expenses);
+ $('#simMonths').innerHTML=rows.map(m=>`<article class="simulation-month"><div><strong>Monat ${m.month}</strong><small>Start ${money(m.opening)} · Einnahmen ${money(m.revenue)} · Kosten ${money(m.cost)}</small></div><strong class="${m.closing<0?'simulation-negative':''}">${money(m.closing)}</strong></article>`).join('');
+ const verdict=ending<0?'Das Kapital wäre vor Ende des Zeitraums aufgebraucht. Bezahlte KI-Aufrufe müssten vorher gestoppt werden.':available<0?'Das Kapital reicht rechnerisch, unterschreitet aber die geschützte Reserve. Weitere bezahlte Ausgaben sollten gestoppt werden.':revenue===0?'Ohne Provisionen bleiben '+money(ending)+' übrig. Das System überlebt in diesem Modell, verdient aber noch kein eigenes Geld.':'In diesem Szenario bleiben '+money(ending)+' übrig. Ob es realistisch ist, hängt von echten Klicks, Conversions, Stornos und ausgezahlten Provisionen ab.';
+ $('#simVerdict').innerHTML='<strong>Simulationsergebnis</strong><span>'+esc(verdict)+' Diese Zahlen sind Annahmen, keine Vorhersage.</span>';
+}
+
 const simplePages = {
  production:['Produktion','PRODUKTIONSSTEUERUNG','Bild- und Videoaufträge, Qualitätskontrolle und Export werden hier zentral gesteuert.','Die Generatoren werden erst angebunden, wenn kostenlose oder ausdrücklich freigegebene Werkzeuge technisch geprüft sind.'],
  calendar:['Planung','PUBLISHING & KALENDER','Redaktionskalender, Veröffentlichungsstatus und kanalbezogene Planung.','Direktes Veröffentlichen wird nur über offiziell unterstützte Schnittstellen aktiviert.'],
@@ -519,7 +590,7 @@ function simplePage(id){
  return `<div class="hero-panel"><div class="hero-icon">${sections.find(s=>s[0]===id)?.[2]||'•'}</div><div><h2>${title}</h2><p>${desc}</p></div></div><div class="panel"><h3>Modulstatus</h3><p class="muted">Grundstruktur angelegt · Fachfunktionen werden in den nächsten Entwicklungsstufen integriert.</p><div class="progress-track"><span style="width:12%"></span></div><small class="muted">Grundgerüst: Navigation und lokale Datenbasis vorhanden</small></div><div class="notice"><strong>Umsetzungsregel</strong><span>${note}</span></div>`;
 }
 function renderPage(){
- const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():simplePage(active);
+ const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():active==='simulation'?simulationPage():simplePage(active);
  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
  $('#addProduct')?.addEventListener('click',()=>showProductForm());
  $('#inspectProductLink')?.addEventListener('click',inspectProductLink);
@@ -549,6 +620,7 @@ function renderPage(){
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
+ $('#runSimulation')?.addEventListener('click',run90DaySimulation);$('#simReset')?.addEventListener('click',()=>{for(const [id,value] of Object.entries({simSeed:20,simCost:2,simReserve:3,simRev1:0,simRev2:0,simRev3:0}))$('#'+id).value=String(value);run90DaySimulation();});
  $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFundRate')?.addEventListener('click',saveFundRate);$('#allocateFund')?.addEventListener('click',allocateFund);
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
