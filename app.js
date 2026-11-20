@@ -174,7 +174,7 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
   <section class="media-generation-panel">
-   <div class="panel-head"><div><h3>Originalgetreue Bild-Slides</h3><p>Drei saubere 8:9-Slides direkt aus deinen Produktfotos erstellen.</p></div><span class="status-tag">Originalfoto · Text separat gesetzt</span></div>
+   <div class="panel-head"><div><h3>KI-generierte UGC-Slides</h3><p>Drei authentische 8:9-iPhone-Slides mit Swipe-Dramaturgie generieren.</p></div><span class="status-tag">FLUX KI · iPhone-12-Look</span></div>
    <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
    <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Für jede Slide wird ein Originalfoto verwendet; Text wird separat und lesbar eingeblendet.</div>
    ${generatedSlidesMarkup(draft)}
@@ -247,7 +247,7 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice){
    const bodies=[
     'Warte auf Slide 2 →',
     'Genau dieses Detail macht den Unterschied. →',
-    verifiedPrice!==null?'Preis: '+money(verifiedPrice):'Preis beim Händler prüfen'
+    verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · Details ansehen →':'Preis aktuell beim Händler prüfen →'
    ];
    const drawText=(text,x,y,font)=>{
     ctx.save();ctx.font=font;ctx.textAlign='left';ctx.textBaseline='alphabetic';
@@ -295,7 +295,7 @@ async function generateSlideImages(postId){
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
  if(button){button.disabled=true;button.textContent='KI generiert Slides …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
- const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&String(product.priceStatus||'').toLowerCase()==='verified';
+ const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
  const verifiedPrice=priceVerified?Number(product.price):null;
  try{
   const referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));
