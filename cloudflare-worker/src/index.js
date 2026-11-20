@@ -99,7 +99,9 @@ async function syncApi(request, env, cors) {
    if (!workspaceId || workspaceId.length>128) return json({error:'workspaceId fehlt oder ist ungültig.'},400,cors);
    const result={};
    for (const store of SYNC_STORES) {
-    const rows = await env.DB.prepare('SELECT id, payload_json, updated_at FROM '+store+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
+    const rows = store==='workspaces'
+     ? await env.DB.prepare('SELECT id, payload_json, updated_at FROM workspaces WHERE owner_sub = ? AND id = ? AND deleted_at IS NULL LIMIT 1').bind(subject,workspaceId).all()
+     : await env.DB.prepare('SELECT id, payload_json, updated_at FROM '+store+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
     result[store]=rows.results.map(row=>({id:row.id,...JSON.parse(row.payload_json),updatedAt:row.updated_at}));
    }
    return json({workspaceId,stores:result},200,cors);
