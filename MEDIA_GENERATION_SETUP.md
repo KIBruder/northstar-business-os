@@ -1,30 +1,38 @@
-# Northstar – echte KI-Bildproduktion
+# Northstar – kostenlose KI-Bildproduktion mit Cloudflare Workers AI
 
-## Funktionsumfang
-- Northstar sendet bis zu 8 gespeicherte Produktbilder als Referenzen an einen geschützten Cloudflare Worker.
-- Der Worker ruft die OpenAI Images API mit `gpt-image-2.6-flare` auf.
-- Northstar erzeugt drei einzelne Produktvisuals, schneidet sie auf exakt 8:9 zu und speichert die PNG-Dateien lokal am Content-Projekt in IndexedDB.
-- Der API-Schlüssel liegt ausschließlich als Cloudflare-Secret auf dem Worker.
+## Architektur
+- Northstar sendet pro Slide einen Prompt und optional ein Produktreferenzbild an einen geschützten Cloudflare Worker.
+- Der Worker nutzt das Cloudflare Workers AI Binding und `@cf/black-forest-labs/flux-2-klein-4b`.
+- Das Modell liefert Base64-Bilddaten zurück. Northstar verarbeitet und speichert die Slides lokal in IndexedDB.
+- Kein OpenAI-API-Key und kein kostenpflichtiger OpenAI-Images-Aufruf.
 
-## Einrichtung
-1. Dieses Verzeichnis als Cloudflare Worker deployen.
-2. Unter Worker → Settings → Variables and Secrets folgende Secrets anlegen:
-   - `OPENAI_API_KEY`: eigener OpenAI API-Key (separates API-Billing; ChatGPT-Abonnement enthält kein API-Guthaben).
-   - `NORTHSTAR_ACCESS_TOKEN`: selbst gewähltes langes Zufallstoken.
-3. `ALLOWED_ORIGIN` auf die tatsächliche GitHub-Pages-Origin setzen: `https://kibruder.github.io`.
-4. Worker deployen. Die Worker-Adresse endet auf `.workers.dev`.
-5. In Northstar beim Content-Projekt die Worker-Adresse mit `/api/generate-image` und dasselbe Zugriffstoken hinterlegen.
+## Cloudflare Free einrichten
+1. Kostenloses Cloudflare-Konto öffnen: https://dash.cloudflare.com/
+2. Workers & Pages öffnen und den Ordner `cloudflare-worker` aus diesem Repository mit Wrangler deployen.
+3. Worker → Settings → Variables and Secrets: Secret `NORTHSTAR_ACCESS_TOKEN` mit langem Zufallswert anlegen.
+4. Variable `ALLOWED_ORIGIN` auf `https://kibruder.github.io` setzen.
+5. Prüfen, dass Workers Free aktiv bleibt. Keinen Paid-Plan aktivieren und keine Zahlungsdaten hinzufügen.
+6. Die Worker-Adresse mit `.workers.dev` notieren.
 
-## Kostenkontrolle
-- Jede Slide löst einen separaten kostenpflichtigen Images-API-Aufruf aus.
-- Drei Slides bedeuten drei API-Aufrufe.
-- Die Generierung startet ausschließlich nach Klick auf „3 Slides jetzt generieren“.
-- Vor Live-Nutzung die aktuellen Preise im OpenAI Platform Billing prüfen.
+## Northstar verbinden
+1. Content-Projekt öffnen.
+2. Worker-Adresse inklusive `/api/generate-image` eintragen.
+3. Dasselbe `NORTHSTAR_ACCESS_TOKEN` in Northstar hinterlegen.
+4. Zunächst nur einen Slide testweise generieren.
 
-## Grenzen
-- Kein API-Key im Frontend, in localStorage oder in GitHub.
-- Das Zugriffstoken schützt den Worker zusätzlich; es ersetzt nicht den API-Key-Schutz.
-- Eingaben sind auf 8 Bilder und 14 MB Referenzdaten begrenzt.
-- Generierte Bilder können Produktdetails verändern. Vor Veröffentlichung Produkt, Farbe, Logo, Preis und Eigenschaften mit den Originalbildern abgleichen.
-- Northstar speichert die generierten Bilder lokal. Es gibt keine automatische TikTok-Veröffentlichung.
-- API-Zugang, Modellverfügbarkeit und Kosten hängen vom OpenAI-API-Projekt ab. Eine Organisationsverifizierung kann erforderlich sein.
+## Kontingent und Kostenbremse
+- Cloudflare dokumentiert 10.000 Neurons pro Tag kostenlos für Workers AI; das Kontingent wird um 00:00 UTC zurückgesetzt.
+- Auf Workers Free schlagen weitere Anfragen nach Erreichen des Tageslimits fehl. Für Mehrverbrauch ist ein Upgrade auf Workers Paid erforderlich; ohne Upgrade keine kostenpflichtige Fortsetzung.
+- Das Kontingent gilt kontoübergreifend für Workers AI und kann durch andere Projekte verbraucht werden.
+- Kosten/Neurons hängen vom Modell und der Bildgröße ab. Drei Slides verbrauchen entsprechend mehr Kontingent als ein einzelner Test.
+
+## Referenzbilder und Grenzen
+- Diese Integration übergibt maximal ein Referenzbild pro Slide.
+- Das Modell unterstützt Bildgenerierung und Bildbearbeitung; Produkttreue muss praktisch geprüft werden.
+- KI kann Produktdetails, Logos, Farben und Beschriftungen verändern. Vor Veröffentlichung immer mit dem Original abgleichen.
+- Northstar speichert lokal und veröffentlicht nicht automatisch auf TikTok.
+
+## Offizielle Dokumentation
+- Modell und Eingabeformat: https://developers.cloudflare.com/workers-ai/models/flux-2-klein-4b/
+- Einführung und Multipart-Beispiel: https://developers.cloudflare.com/changelog/post/2026-01-15-flux-2-klein-4b-workers-ai/
+- Kontingent: https://developers.cloudflare.com/workers-ai/platform/pricing/
