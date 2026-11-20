@@ -36,4 +36,4 @@
 ## Offizielle Dokumentation
 - Modell und Eingabeformat: https://developers.cloudflare.com/workers-ai/models/flux-2-klein-4b/
 - Einführung und Multipart-Beispiel: https://developers.cloudflare.com/changelog/post/2026-01-15-flux-2-klein-4b-workers-ai/
-- Kontingent: https://developers.cloudflare.com/workers-ai/platform/pricing/
+- Kontingent: https://developers.cloudflare.com/workers-ai/platform/pricing/\n\n## Universal product AI\n- The Worker exposes `/api/analyze-product` beside `/api/generate-image`.\n- The analysis endpoint runs Moondream vision analysis on up to three reference images and uses a language model to produce a structured category-agnostic BOFU plan.\n- The analysis is stored with the product and reused by content generation and FLUX prompts.\n- This adds Workers AI inference usage. Check the current Cloudflare model pricing and account quota before scaling.\n- Generated claims remain limited to visible evidence and supplied product data; review images and copy before posting.\n
