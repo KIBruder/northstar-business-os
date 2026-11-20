@@ -65,7 +65,7 @@ async function analyzeProduct(request, env, cors) {
  if (!match) return json({ error: 'Die Produkt-KI lieferte kein auswertbares JSON. Bitte erneut versuchen.' }, 502, cors);
  let analysis;
  try { analysis = JSON.parse(match[0]); } catch { return json({ error: 'Die Produkt-KI lieferte ungültige strukturierte Daten. Bitte erneut versuchen.' }, 502, cors); }
- const required=['productName','category','summary','visibleIdentity','verifiedVisibleFeatures','hooks','slideScenes','negativePrompt'];
+ const required=['productName','category','summary','visibleIdentity','visibleFeatures','hooks','slideScenes','negativePrompt'];
  if (required.some(key=>!analysis[key]) || !Array.isArray(analysis.hooks) || analysis.hooks.length<3 || !Array.isArray(analysis.slideScenes) || analysis.slideScenes.length<3) return json({ error: 'Die Produkt-KI-Analyse ist unvollständig.' }, 502, cors);
  return json({ analysis, model:VISION_MODEL+' + '+TEXT_MODEL, referenceCount:images.length }, 200, cors);
 }
