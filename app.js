@@ -200,6 +200,18 @@ function saveMediaSettings(){
  localStorage.setItem('northstar_media_token',token);
  toast('Generator-Verbindung lokal gespeichert.');
 }
+function prepareFluxReferenceImage(dataUrl){
+ return new Promise((resolve,reject)=>{
+  const img=new Image();img.onload=()=>{
+   const maxEdge=512,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+   const width=Math.max(1,Math.round((img.naturalWidth||img.width)*scale)),height=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
+   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas für Referenzbild nicht verfügbar.'));return;}
+   ctx.drawImage(img,0,0,width,height);
+   resolve(canvas.toDataURL('image/jpeg',0.84));
+  };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
+ });
+}
 function cropImageToEightNinths(dataUrl,slide){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
@@ -239,12 +251,12 @@ async function generateSlideImages(postId){
    if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
    const slide=post.draft.slides[i];
    const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact product. Preserve its original shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images,aspectRatio:'8:9'})});
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
    const finalImage=await cropImageToEightNinths(payload.imageDataUrl,slide);
-   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'gpt-image-2.6-flare',aspectRatio:'8:9'};
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9'};
    await db.put('posts',post);
   }
   post.draft.productionStatus='Drei generierte 8:9-Bilddateien lokal gespeichert. Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
