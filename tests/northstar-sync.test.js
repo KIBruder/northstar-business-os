@@ -55,7 +55,7 @@ async function signedAccessToken(team, audience) {
 }
 
 async function assertAuthenticatedSyncBinding(bindingName) {
-  const team = 'https://northstar-' + bindingName.toLowerCase() + '.cloudflareaccess.com';
+  const team = 'https://northstar-' + (bindingName === 'DB' ? 'uppercase' : 'lowercase') + '.cloudflareaccess.com';
   const audience = 'northstar-sync-test-audience';
   const { token, jwk } = await signedAccessToken(team, audience);
   const originalFetch = globalThis.fetch;
