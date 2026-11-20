@@ -174,12 +174,12 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
   <section class="media-generation-panel">
-   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">OpenAI Images API</span></div>
+   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">Cloudflare Workers AI · FLUX.2 Klein</span></div>
    <div class="media-connection-grid">
-    <label>Northstar-Generator-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://dein-worker.example.workers.dev/api/generate-image"></label>
+    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://dein-worker.workers.dev/api/generate-image"></label>
     <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
    </div>
-   <p class="form-hint">Der OpenAI-API-Schlüssel bleibt ausschließlich als Cloudflare-Secret auf dem Worker. Hier wird nur die geschützte Worker-Verbindung gespeichert.</p>
+   <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
    <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
    <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert.</div>
    ${generatedSlidesMarkup(draft)}
