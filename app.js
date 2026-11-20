@@ -165,12 +165,16 @@ function contentDetail(post,product){
  const draft=post.draft;
  return `<section class="panel content-detail" id="contentDetail">
   <div class="panel-head"><div><h3>${esc(post.title)}</h3><p>${product?`Produkt: ${esc(product.name)}`:'Manueller Entwurf'} · ${esc(post.channel||'TikTok')}</p></div><button class="icon-button" id="closeContentDetail" type="button">✕</button></div>
-  ${draft?`<div class="draft-meta"><span class="status-tag">${esc(draft.strategy||'BOFU')}</span><span class="subtle">5-Slide-Textentwurf · ${new Date(draft.createdAt).toLocaleString('de-DE')}</span></div>
-  <div class="carousel-draft">${draft.slides.map((slide,i)=>`<article class="draft-slide"><div class="draft-slide-top"><strong>Slide ${i+1} von ${draft.slides.length}</strong><span>${esc(slide.role)}</span></div><h4>${esc(slide.headline)}</h4><p>${esc(slide.body)}</p><small>${esc(slide.visualNote)}</small></article>`).join('')}</div>
-  <div class="detail-block"><span>Caption-Entwurf</span><p>${esc(draft.caption)}</p></div>
-  <div class="detail-block"><span>Hashtag-Entwurf</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
-  <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Text kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Entwurf neu erstellen</button></div>
-  `:`<div class="empty-state compact"><h3>Noch kein Carousel-Text erstellt</h3><p>Erstelle aus den gespeicherten Produktangaben einen ersten 5-Slide-Entwurf.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ Carousel-Entwurf erstellen</button></div>`}
+  ${draft?`<div class="draft-meta"><span class="status-tag">${esc(draft.strategy||'BOFU')}</span><span class="subtle">3-Slide-BOFU-Paket · ${new Date(draft.createdAt).toLocaleString('de-DE')}</span></div>
+  <div class="notice"><strong>Produktionsstatus</strong><span>${esc(draft.productionStatus||'Text- und Produktionsbrief erstellt. Bild-/Videodateien müssen noch generiert werden.')}</span></div>
+  <div class="carousel-draft">${draft.slides.map((slide,i)=>`<article class="draft-slide"><div class="draft-slide-top"><strong>Slide ${i+1} von ${draft.slides.length}</strong><span>${esc(slide.role)}</span></div><h4>${esc(slide.headline)}</h4><p>${esc(slide.body)}</p><small>${esc(slide.visualNote)}</small><div class="detail-block"><span>Bildprompt / Produktionsanweisung</span><p>${esc(slide.imagePrompt||slide.visualNote)}</p></div></article>`).join('')}</div>
+  <div class="detail-block"><span>Voiceover / Sprechtext</span><p>${esc(draft.videoScript||'')}</p></div>
+  <div class="detail-block"><span>Videoplan · 9:16</span><p>${(draft.videoScenes||[]).map((scene,i)=>`${i+1}. ${scene.time} – ${scene.visual} | Text: ${scene.overlay}`).map(esc).join('<br>')}</p></div>
+  <div class="detail-block"><span>Video-Generierungs-Prompt</span><p>${esc(draft.videoPrompt||'')}</p></div>
+  <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
+  <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
+  <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
+  `:`<div class="empty-state compact"><h3>Noch kein Produktionspaket</h3><p>Erstelle aus dem Produkt einen BOFU-Beitrag mit drei Slides, Voiceover, Szenenplan, Bildprompts, Caption und Hashtags.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ BOFU-Produktionspaket erstellen</button></div>`}
  </section>`;
 }
 async function handlePostAction(action,id){
@@ -188,34 +192,47 @@ async function generateContentDraft(postId){
  const product=state.products.find(x=>x.id===post.productId && x.workspaceId===state.workspaceId);
  if(!product){toast('Für diesen Entwurf ist kein Produkt verknüpft.');return;}
  const panel=$('#contentDetail');
- if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>Content-Entwurf wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten werden geprüft</li><li id="genStep2">Slide-Dramaturgie wird aufgebaut</li><li id="genStep3">Caption und Hashtags werden erstellt</li><li id="genStep4">Entwurf wird lokal gespeichert</li></ol></div>`);}
+ if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>BOFU-Produktionspaket wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten und Beleglage prüfen</li><li id="genStep2">Drei-Slide-Dramaturgie aufbauen</li><li id="genStep3">Voiceover, Szenen und Medienprompts erstellen</li><li id="genStep4">Paket lokal speichern</li></ol></div>`);}
  const setStep=(n,width)=>{const bar=$('#generationBar');if(bar)bar.style.width=width+'%';const step=$(`#genStep${n}`);if(step)step.classList.add('step-done');};
- setStep(1,28);await new Promise(r=>setTimeout(r,220));
- const name=product.name;
- const description=String(product.description||'').trim();
- const hooks=product.analysis?.hooks||[`Das solltest du vor dem Kauf von ${name} wissen`,`Für wen lohnt sich ${name} wirklich?`,`Diese Punkte solltest du bei ${name} prüfen`];
- const angles=product.analysis?.angles||[];
- setStep(2,52);await new Promise(r=>setTimeout(r,220));
- const safeBenefit=description?description.split(/[.!?\\n]/).map(x=>x.trim()).filter(Boolean)[0]:'Noch kein belegter Produktvorteil hinterlegt. Ergänze Produktmerkmale, bevor konkrete Vorteile beworben werden.';
+ setStep(1,22);await new Promise(r=>setTimeout(r,100));
+ const name=String(product.name||'Produkt').trim();
+ const rawDescription=String(product.description||'').trim();
+ const noisy=/(?:\\b5g\\b|\\b4g\\b|\\blte\\b|\\d{1,2}:\\d{2}|©|[<>]{1,}|\\b\\d{1,2}%\\b|kostenloser versand|lieferung bis|verlängerte rückgabe)/i.test(rawDescription)||rawDescription.length>900;
+ const verifiedDescription=!noisy&&rawDescription.length>15?rawDescription:'';
+ const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&String(product.priceStatus||'').toLowerCase()==='verified';
+ const seller=String(product.merchant||'').trim();
+ const source=String(product.sourceUrl||'').trim();
+ const facts=verifiedDescription||'Produktmerkmale sind noch nicht ausreichend verifiziert. Vor der Veröffentlichung die tatsächlichen Eigenschaften direkt auf der Produktseite prüfen.';
+ const priceText=priceVerified?`Preis laut geprüftem Datensatz: ${product.price} €.`:'Keinen Preis nennen: Preis fehlt oder ist nicht als verifiziert markiert.';
+ const sourceText=source?'Quellenlink ist hinterlegt, aber nicht automatisch unabhängig geprüft.':'Noch keine Produktquelle hinterlegt.';
+ const title=name.replace(/[.!?]+$/,'');
  const slides=[
-  {role:'Hook / Scroll-Stopper',headline:hooks[0],body:'Kurzer Einstieg. Noch keine unbelegten Produkteigenschaften behaupten.',visualNote:'Authentisches Produktbild oder passendes Reaktionsmotiv; Text kurz halten.'},
-  {role:'Problem / Bedarf',headline:`Suchst du eine passende Lösung rund um ${name}?`,body:'Zeige die konkrete Alltagssituation deiner Zielgruppe. Keine erfundenen Versprechen.',visualNote:'Problem- oder Anwendungssituation zeigen.'},
-  {role:'Produkt / belegbare Information',headline:'Was bisher über das Produkt bekannt ist',body:safeBenefit,visualNote:'Originalprodukt klar und unverfälscht zeigen. Fehlende Merkmale erst recherchieren.'},
-  {role:'Kaufentscheidung / Vertrauen',headline:'Das solltest du vor dem Kauf prüfen',body:product.sourceUrl?'Quelle ist hinterlegt, wurde aber noch nicht unabhängig geprüft. Preis, Varianten und technische Daten vor Veröffentlichung kontrollieren.':'Noch keine belastbare Quelle hinterlegt. Preis, Varianten und technische Daten vor Veröffentlichung recherchieren.',visualNote:'Detailaufnahme; nur nachgewiesene Eigenschaften beschriften.'},
-  {role:'CTA / Abschluss',headline:`Mehr Details zu ${name} ansehen`,body:'Prüfe Preis, Verfügbarkeit und Produktdetails beim Händler. Affiliate-Hinweis vor Veröffentlichung ergänzen, falls zutreffend.',visualNote:'Produktbild mit ruhigem, eindeutigem Call-to-Action.'}
+  {role:'1 · Hook / Scroll-Stopper',headline:`Bevor du diese ${title} kaufst …`,body:'Ein konkreter Kaufcheck statt leerer Werbeversprechen. In den ersten Sekunden das Originalprodukt zeigen.',visualNote:'Vertikales 9:16-Standbild oder kurzer Reaktions-Clip als Einstieg; maximal eine kurze Textzeile.',imagePrompt:`Create a realistic 9:16 smartphone-style TikTok Shop opening visual for the exact product shown in the supplied reference image. Preserve the product design, color, proportions and details exactly. Natural handheld framing, authentic everyday environment, clear negative space for one short German hook. No invented logos, no fake claims, no price text.`},
+  {role:'2 · Produkt / belegbare Information',headline:`Was du bei ${title} prüfen solltest`,body:facts,visualNote:'Originalprodukt groß und unverändert zeigen; nur verifizierte Eigenschaften als Text einblenden.',imagePrompt:`Create a clean 9:16 product-detail visual using the supplied original product photo as the identity reference. Keep the product unchanged and photorealistic. Show useful close-up framing and a simple uncluttered background. Do not add features, accessories, labels or specifications that are not visible or supplied.`},
+  {role:'3 · BOFU / Kaufentscheidung',headline:'Passt das zu deinem Bedarf?',body:`${priceText} ${sourceText} Vor dem Kauf Varianten, Lieferumfang und Rückgabebedingungen prüfen.`,visualNote:'Ruhiger Abschluss mit Produktaufnahme und klarer Aufforderung, aktuelle Details beim Händler zu prüfen.',imagePrompt:`Create a minimal 9:16 final TikTok product frame using the exact supplied product reference. Product remains unchanged, centered and clearly visible, authentic smartphone photo aesthetic, clean space for a short German call to action. No fabricated discount, price, rating or urgency.`}
  ];
- setStep(3,78);await new Promise(r=>setTimeout(r,220));
- post.draft={strategy:post.strategy||'BOFU',slides,caption:`${name}: Diese Punkte solltest du vor dem Kauf prüfen. Produktdetails und aktuelle Konditionen beim Händler ansehen.`,hashtags:['#musthave','#produkttipp','#shopping','#vergleich','#affiliate'],createdAt:new Date().toISOString(),sourceType:'local-template-v1',notes:angles};
- post.status='Textentwurf erstellt';post.updatedAt=new Date().toISOString();
- await db.put('posts',post);log('Carousel-Textentwurf erstellt',`${post.title} · 5 Slides`);
- setStep(4,100);await new Promise(r=>setTimeout(r,180));
- state.selectedPostId=post.id;renderPage();toast('5-Slide-Textentwurf gespeichert.');
+ setStep(2,48);await new Promise(r=>setTimeout(r,100));
+ const videoScript=`Du überlegst, dir ${title} zu holen? Schau dir zuerst die Details an. ${verifiedDescription?facts:'Prüfe die tatsächlichen Eigenschaften und den Lieferumfang direkt beim Händler.'} Vergleiche Varianten und aktuelle Konditionen, bevor du entscheidest.`;
+ const videoScenes=[
+  {time:'0–3 s',visual:'Hook: Originalprodukt sofort im Bild, schneller Schnitt oder kurzer Reaction-Einstieg',overlay:`Vor dem Kauf von ${title} …`},
+  {time:'3–10 s',visual:'Nahaufnahme des Originalprodukts; zwei bis drei echte Details zeigen',overlay:verifiedDescription?'Nur belegte Merkmale zeigen':'Eigenschaften und Lieferumfang prüfen'},
+  {time:'10–15 s',visual:'Produkt im Alltag / ruhige Abschlussaufnahme',overlay:'Details und aktuelle Konditionen prüfen'}
+ ];
+ const videoPrompt=`Create a 15-second vertical 9:16 German TikTok Shop affiliate video for ${title}. Use the supplied product photo as a strict visual reference: do not alter product shape, branding, color or proportions. Style: authentic iPhone UGC, natural light, fast but clear edits, product visible in the first second, clean German on-screen captions, subtle sound design, no fake reviews, no fabricated specifications, no unverified price or discount. Voiceover: ${videoScript}`;
+ setStep(3,76);await new Promise(r=>setTimeout(r,100));
+ const caption=`${title}: Vor dem Kauf die Details prüfen und mit dem eigenen Bedarf abgleichen. ${seller?'Anbieter: '+seller+'. ':''}${source?'Produktquelle hinterlegt – bitte aktuelle Angaben dort kontrollieren.':'Aktuelle Produktdetails beim Händler prüfen.'}`;
+ const hashtags=['#tiktokshop','#produkttipp','#musthave','#shopping','#affiliate'];
+ post.draft={strategy:'BOFU',slides,caption,hashtags,videoScript,videoScenes,videoPrompt,createdAt:new Date().toISOString(),sourceType:'northstar-production-brief-v2',productionStatus:'Text, Szenenplan und Medienprompts erstellt. Bild-/Videodateien noch nicht generiert; Faktenprüfung vor Veröffentlichung erforderlich.',evidence:{descriptionVerified:Boolean(verifiedDescription),priceVerified:Boolean(priceVerified),sellerPresent:Boolean(seller),sourcePresent:Boolean(source)},notes:product.analysis?.angles||[]};
+ post.status='Produktionspaket erstellt';post.updatedAt=new Date().toISOString();
+ await db.put('posts',post);log('BOFU-Produktionspaket erstellt',`${post.title} · 3 Slides + Video-Brief`);
+ setStep(4,100);await new Promise(r=>setTimeout(r,100));
+ state.selectedPostId=post.id;renderPage();toast('BOFU-Produktionspaket gespeichert.');
 }
 function copyContentDraft(){
  const post=state.posts.find(x=>x.id===state.selectedPostId);if(!post?.draft)return;
  const d=post.draft;
- const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.visualNote}`),'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
- if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Content-Text kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
+ const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.imagePrompt||s.visualNote}`),'',`VOICEOVER\\n${d.videoScript||''}`,'',`VIDEO-SZENEN\\n${(d.videoScenes||[]).map(s=>s.time+' – '+s.visual+' | Overlay: '+s.overlay).join('\\n')}`,'',`VIDEO-PROMPT\\n${d.videoPrompt||''}`,'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
+ if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Vollständiges Produktionspaket kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
 }
 const simplePages = {
  production:['Produktion','PRODUKTIONSSTEUERUNG','Bild- und Videoaufträge, Qualitätskontrolle und Export werden hier zentral gesteuert.','Die Generatoren werden erst angebunden, wenn kostenlose oder ausdrücklich freigegebene Werkzeuge technisch geprüft sind.'],
