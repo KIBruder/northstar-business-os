@@ -134,7 +134,8 @@ async function syncApi(request, env, cors) {
 async function verifyAccessJwt(request,env) {
  const token=request.headers.get('Cf-Access-Jwt-Assertion');
  if(!token) throw new Error('Missing Cf-Access-Jwt-Assertion');
- const team=String(env.ACCESS_TEAM_DOMAIN||'').replace(/\\/$/,'');
+ const rawTeam=String(env.ACCESS_TEAM_DOMAIN||'');
+ const team=rawTeam.endsWith('/')?rawTeam.slice(0,-1):rawTeam;
  const audience=String(env.ACCESS_AUD||'');
  if(!team||!audience) throw new Error('ACCESS_TEAM_DOMAIN and ACCESS_AUD are required');
  const parts=token.split('.');
