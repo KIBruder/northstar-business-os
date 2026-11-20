@@ -177,8 +177,10 @@ function contentDetail(post,product){
    <div class="panel-head"><div><h3>KI-generierte UGC-Slides</h3><p>Drei authentische 8:9-iPhone-Slides mit Swipe-Dramaturgie generieren.</p></div><span class="status-tag">FLUX KI · iPhone-12-Look</span></div>
    <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
    <div class="media-connection-grid"><label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label><label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label></div>
-   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 KI-Slides generieren</button></div>
-   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Bis zu 8 Referenzen werden gespeichert; pro Slide wird genau eine Referenz verwendet, damit unterschiedliche Ansichten nicht vermischt werden.</div>
+   <div class="detail-actions"><button class="button button-primary" id="generateOriginalSlides" data-id="${post.id}">Originalfotos + BOFU-Text erstellen</button><button class="button button-secondary" id="generateSlideImages" data-id="${post.id}">✦ 3 KI-Szenen generieren (FLUX)</button></div>
+   <div class="form-hint"><strong>Originalfoto-Modus:</strong> Kein KI-Repainting, keine neue Produktdarstellung. Northstar verwendet deine gespeicherten Produktfotos, beschneidet sie für 8:9 und setzt nur den BOFU-Text als Overlay darüber. Das ist die sichere Standardvariante für Produkt-Treue.</div>
+   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">FLUX-Verbindung speichern</button></div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Originalmodus funktioniert ohne Worker und ohne Credits. FLUX verändert das Bildmodell-seitig; Ergebnisse immer mit dem Original vergleichen.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
@@ -295,6 +297,34 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
       resolve(canvas.toDataURL('image/png'));
   };img.onerror=()=>reject(new Error('KI-Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
  });
+}
+async function generateOriginalPhotoSlides(postId){
+ const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
+ const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
+ if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
+ const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
+ if(!referenceSources.length){toast('Kein gespeichertes Produktfoto gefunden. Bitte zuerst Produktbilder hochladen.');return;}
+ const button=$('#generateOriginalSlides'),status=$('#mediaGenerationStatus');
+ if(button){button.disabled=true;button.textContent='Original-Slides werden erstellt …';}
+ const verifiedPrice=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
+ const creative=buildProductCreative(product);
+ post.draft.generatedSlides=post.draft.generatedSlides||[];
+ try{
+  for(let i=0;i<3;i++){
+   if(status)status.textContent='Original-Slide '+(i+1)+' von 3 wird ohne KI-Repainting aufgebaut …';
+   const selectedIndex=Math.min(i,referenceSources.length-1);
+   const source=referenceSources[selectedIndex];
+   const slide=post.draft.slides[i]||{};
+   const finalImage=await composeGeneratedSlide(source,slide,i,product,verifiedPrice?Number(product.price):null,creative);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:'Originalfoto + Textoverlay (kein KI-Repainting)',aspectRatio:'8:9',sourceReferenceIndex:selectedIndex,referenceCount:referenceSources.length,identityMode:'original-photo'};
+   await db.put('posts',post);
+  }
+  post.draft.productionStatus='Drei BOFU-Slides aus Originalproduktfotos erstellt. Kein KI-Repainting; nur Zuschnitt auf 8:9 und Textoverlay. Produktdetails visuell prüfen, da Bildausschnitt und Overlay das Motiv beeinflussen können.';
+  post.status='Originalfoto-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
+  await db.put('posts',post);log('Drei Originalfoto-BOFU-Slides erstellt',post.title);
+  state.selectedPostId=post.id;renderPage();toast('Drei Originalfoto-Slides ohne KI-Repainting gespeichert.');
+ }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Originalfoto-Slides fehlgeschlagen: '+error.message);}
+ finally{const current=$('#generateOriginalSlides');if(current){current.disabled=false;current.textContent='Originalfotos + BOFU-Text erstellen';}}
 }
 async function generateSlideImages(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
@@ -444,6 +474,7 @@ function renderPage(){
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
  $('#saveMediaSettings')?.addEventListener('click',saveMediaSettings);
+ $('#generateOriginalSlides')?.addEventListener('click',e=>generateOriginalPhotoSlides(e.currentTarget.dataset.id));
  $('#generateSlideImages')?.addEventListener('click',e=>generateSlideImages(e.currentTarget.dataset.id));
  $('#saveAllSlidesToPhotos')?.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId));
  document.querySelectorAll('[data-save-slide]').forEach(button=>button.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId,Number(button.dataset.saveSlide))));
