@@ -872,6 +872,7 @@ async function createContentFromProduct(id){
  const p=state.products.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!p)return;
  const post={id:crypto.randomUUID(),workspaceId:state.workspaceId,productId:p.id,title:p.name,channel:'TikTok',strategy:'BOFU',status:'Entwurf',hooks:p.analysis?.hooks||[],angles:p.analysis?.angles||[],createdAt:new Date().toISOString()};
  state.posts.push(post);await db.put('posts',post);
+ queueAgentTask({title:'BOFU-Content vorbereiten: '+p.name,description:'Auf Basis bestätigter Produktdaten eine natürliche 3-Slide-Dramaturgie und passende Medienplanung erstellen.',role:'content',priority:'normal',relatedType:'post',relatedId:post.id});
  p.status='Content geplant';p.updatedAt=new Date().toISOString();await db.put('products',p);
  log('Content-Projekt aus Produkt erstellt',p.name);state.selectedPostId=post.id;
  go('content');toast('Content-Entwurf mit Produktverknüpfung erstellt.');
