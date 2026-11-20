@@ -286,7 +286,7 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
    const priceLine=verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · '+creative.cta:creative.cta;
    const body=[ 'Schau dir die nächsten Bilder an', creative.facts||'Details und Verarbeitung im Blick', priceLine ][index];
    const drawText=(text,x,y,font)=>{
-    ctx.save();ctx.font=font;ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.save();ctx.font=font;ctx.textAlign='center';ctx.textBaseline='alphabetic';
     ctx.shadowColor='rgba(0,0,0,.95)';ctx.shadowBlur=1;ctx.shadowOffsetX=3;ctx.shadowOffsetY=3;ctx.lineJoin='round';ctx.strokeStyle='rgba(0,0,0,.98)';ctx.lineWidth=7;ctx.strokeText(text,x,y);
     ctx.fillStyle='#fff';ctx.fillText(text,x,y);ctx.restore();
    };
@@ -302,9 +302,9 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
    const bodyFont='700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
    const headlineLines=wrap(headline,900,headlineFont,2);
    let y=545;
-   headlineLines.forEach(line=>{drawText(line,62,y,headlineFont);y+=57;});
+   headlineLines.forEach(line=>{drawText(line,512,y,headlineFont);y+=57;});
    const bodyLines=wrap(body,900,bodyFont,2);y+=14;
-   bodyLines.forEach(line=>{drawText(line,62,y,bodyFont);y+=40;});
+   bodyLines.forEach(line=>{drawText(line,512,y,bodyFont);y+=40;});
       resolve(canvas.toDataURL('image/png'));
   };img.onerror=()=>reject(new Error('KI-Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
  });
