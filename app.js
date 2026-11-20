@@ -1038,8 +1038,8 @@ function renderWorkspaceSelect(){
 async function init(){
  await db.init();
  for(const store of ['workspaces','products','posts','activities','agentTasks','financeTransactions','settings']) state[store]=await db.all(store);
- if(!state.workspaces.length){const w={id:crypto.randomUUID(),name:'Affiliate Business',description:'Affiliate, Content und Monetarisierung',createdAt:new Date().toISOString()};state.workspaces=[w];await db.put('workspaces',w);}
- state.workspaceId=state.workspaces[0].id;
+ if(!state.workspaces.length&&!localStorage.getItem('northstar_session_token')){const w={id:crypto.randomUUID(),name:'Affiliate Business',description:'Affiliate, Content und Monetarisierung',createdAt:new Date().toISOString()};state.workspaces=[w];await db.put('workspaces',w);}
+ state.workspaceId=state.workspaces[0]?.id||null;
  renderWorkspaceSelect(); renderNav(); renderPage();
  $('#workspaceSelect').addEventListener('change',e=>{if(e.target.value==='__new'){addWorkspace();return;}state.workspaceId=e.target.value;renderPage();});
  $('#quickAdd').addEventListener('click',()=>{const choice=prompt('Was möchtest du anlegen?\\n1 = Produkt\\n2 = Content-Entwurf\\n3 = Arbeitsbereich'); if(choice==='1')addProduct();else if(choice==='2')addPost();else if(choice==='3')addWorkspace();});
