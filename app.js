@@ -246,7 +246,7 @@ async function requestProductAIAnalysis(product,referenceSources=null){
  ]).filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,3);
  if(!sources.length)throw new Error('Die Produkt-KI benötigt mindestens ein hochgeladenes Produktbild.');
  const images=await Promise.all(sources.map(prepareFluxReferenceImage));
- const analyzeUrl=endpoint.replace(/\\/api\\/generate-image\\/?$/,'/api/analyze-product');
+ const analyzeUrl=endpoint.replace(/\/api\/generate-image\/?$/,'/api/analyze-product');
  if(analyzeUrl===endpoint)throw new Error('Worker-Endpunkt muss auf /api/generate-image enden, damit die Produkt-KI erreichbar ist.');
  const response=await fetch(analyzeUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({
   product:{name:String(product?.name||''),description:String(product?.description||''),merchant:String(product?.merchant||'')},
@@ -321,7 +321,7 @@ async function generateOriginalPhotoSlides(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
  const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
-  if(!product.aiCreative?.analyzedAt)await requestProductAIAnalysis(product);
+
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
  if(!referenceSources.length){toast('Kein gespeichertes Produktfoto gefunden. Bitte zuerst Produktbilder hochladen.');return;}
  const button=$('#generateOriginalSlides'),status=$('#mediaGenerationStatus');
@@ -359,9 +359,9 @@ async function generateSlideImages(postId){
  if(button){button.disabled=true;button.textContent='KI generiert Slides …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
  const verifiedPrice=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
- const creative=buildProductCreative(product);
  try{
   if(!product.aiCreative?.analyzedAt||!Array.isArray(product.aiCreative.slideScenes)||product.aiCreative.slideScenes.length<3)await requestProductAIAnalysis(product,referenceSources);
+  const creative=buildProductCreative(product);
   const productReferences=await Promise.all(referenceSources.slice(0,3).map(prepareFluxReferenceImage));
   for(let i=0;i<3;i++){
    if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert – Originalreferenz wird einzeln geschützt …';
@@ -403,6 +403,11 @@ async function generateContentDraft(postId){
  const post=state.posts.find(x=>x.id===postId && x.workspaceId===state.workspaceId);if(!post)return;
  const product=state.products.find(x=>x.id===post.productId && x.workspaceId===state.workspaceId);
  if(!product){toast('Für diesen Entwurf ist kein Produkt verknüpft.');return;}
+ const hasProductImages=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].some(x=>typeof x==='string'&&x.startsWith('data:image/'));
+ if(hasProductImages&&(!product.aiCreative?.analyzedAt||!Array.isArray(product.aiCreative.slideScenes)||product.aiCreative.slideScenes.length<3)){
+  const progress=$('#contentDetail');if(progress)progress.insertAdjacentHTML('afterbegin','<p id="productAIProgress" class="import-progress">Produkt-KI analysiert Bilder, Produktart und passende Verkaufswinkel …</p>');
+  try{await requestProductAIAnalysis(product);}finally{$('#productAIProgress')?.remove();}
+ }
  const panel=$('#contentDetail');
  if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>BOFU-Produktionspaket wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten und Beleglage prüfen</li><li id="genStep2">Drei-Slide-Dramaturgie aufbauen</li><li id="genStep3">Voiceover, Szenen und Medienprompts erstellen</li><li id="genStep4">Paket lokal speichern</li></ol></div>`);}
  const setStep=(n,width)=>{const bar=$('#generationBar');if(bar)bar.style.width=width+'%';const step=$(`#genStep${n}`);if(step)step.classList.add('step-done');};
