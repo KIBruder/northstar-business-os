@@ -718,9 +718,10 @@ function prepareProductFromScreenshot(){
  const preview=$('#productImagePreview');
  if(preview){preview.hidden=false;preview.innerHTML=`<img src="${pendingScreenshotDataUrl}" alt="Screenshot für Produktakte"><span>Screenshot wird beim Speichern lokal am Produkt hinterlegt.</span>`;}
  const status=$('#screenshotImportStatus');
- if(status)status.textContent='Screenshot und Textangaben wurden in das Produktformular übertragen. Bitte Name, Preis und Beschreibung kontrollieren und anschließend speichern.';
+ if(status)status.textContent='Screenshotdaten übernommen. Bitte Produktname und erkannte Angaben kurz prüfen. Nach dem Speichern startet Northstar automatisch den BOFU-Entwurf und erstellt drei Slides aus deinen Originalfotos.';
+ $('#saveProductButton').textContent='Produkt speichern + BOFU starten';
  $('#productFormPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
- toast('Screenshotdaten zur Prüfung übernommen.');
+ toast('Screenshotdaten übernommen – nach dem Speichern startet die Produktion automatisch.');
 }
 function showProductForm(productId=null){
  const panel=$('#productFormPanel'), form=$('#productForm'); if(!panel||!form)return;
@@ -805,6 +806,7 @@ async function saveProduct(event){
  let price=null;
  if(rawPrice){price=Number(rawPrice);if(!Number.isFinite(price)||price<0){toast('Bitte einen gültigen Preis eingeben.');return;}}
  const existing=id?state.products.find(x=>x.id===id):null;
+ const autoProduceFromScreenshot=!existing&&pendingScreenshotImages.length>0;
  let imageDataUrl=existing?.imageDataUrl||'';
  const selectedImageFiles=Array.from(form.elements.productImage.files||[]);
  if(selectedImageFiles.length>8){toast('Maximal 8 Produktbilder auswählen.');return;}
@@ -832,7 +834,23 @@ async function saveProduct(event){
  };
  if(existing){state.products=state.products.map(x=>x.id===id?p:x);await db.put('products',p);log('Produkt bearbeitet',p.name);}
  else{state.products.push(p);await db.put('products',p);log('Produkt erfasst',p.name);queueAgentTask({title:'Produktdaten und Quellen prüfen: '+p.name,description:'Produktangaben, sichtbare Merkmale, Händlerlink und Preisbeleg prüfen. Keine Eigenschaften ohne Nachweis freigeben.',role:'product',priority:'high',relatedType:'product',relatedId:p.id});}
- state.selectedProductId=p.id;pendingScreenshotDataUrl='';clearScreenshotImport();hideProductForm();renderPage();toast(existing?'Produkt aktualisiert.':'Produkt lokal gespeichert.');
+ state.selectedProductId=p.id;pendingScreenshotDataUrl='';clearScreenshotImport();hideProductForm();renderPage();
+ if(autoProduceFromScreenshot){
+  toast('Produkt gespeichert. BOFU-Produktion startet automatisch …');
+  try{
+   await createContentFromProduct(p.id);
+   const postId=state.selectedPostId;
+   if(!postId)throw new Error('Content-Projekt konnte nicht angelegt werden.');
+   await generateContentDraft(postId);
+   await generateOriginalPhotoSlides(postId);
+   toast('Automatik abgeschlossen: BOFU-Entwurf und drei Originalfoto-Slides erstellt. Freigabe bleibt erforderlich.');
+  }catch(error){
+   console.error(error);
+   toast('Produkt ist gespeichert. Automatik wurde unterbrochen: '+(error.message||'Unbekannter Fehler'));
+  }
+  return;
+ }
+ toast(existing?'Produkt aktualisiert.':'Produkt lokal gespeichert.');
 }
 async function runLocalProductAnalysis(id){
  const p=state.products.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!p)return;
