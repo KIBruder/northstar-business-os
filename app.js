@@ -174,14 +174,11 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
   <section class="media-generation-panel">
-   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">Cloudflare Workers AI · FLUX.2 Klein</span></div>
-   <div class="media-connection-grid">
-    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label>
-    <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
-   </div>
-   <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
-   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
-   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktreferenzen möglich; FLUX.2 Klein verarbeitet maximal 4 Referenzbilder pro Generierung.</div>
+   <div class="panel-head"><div><h3>KI-generierte UGC-Slides</h3><p>Drei authentische 8:9-iPhone-Slides mit Swipe-Dramaturgie generieren.</p></div><span class="status-tag">FLUX KI · iPhone-12-Look</span></div>
+   <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
+   <div class="media-connection-grid"><label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label><label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label></div>
+   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 KI-Slides generieren</button></div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Für jede Slide wird ein Originalfoto verwendet; Text wird separat und lesbar eingeblendet.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
@@ -235,26 +232,57 @@ function prepareFluxReferenceImage(dataUrl){
   };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
  });
 }
-function cropImageToEightNinths(dataUrl,slide){
+function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
+   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
    const ratio=8/9,source=img.width/img.height;let sx=0,sy=0,sw=img.width,sh=img.height;
    if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
    else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
-   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
-   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
    ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
-   const gradient=ctx.createLinearGradient(0,620,0,1152);gradient.addColorStop(0,'rgba(5,12,24,0)');gradient.addColorStop(.24,'rgba(5,12,24,.68)');gradient.addColorStop(1,'rgba(5,12,24,.92)');
-   ctx.fillStyle=gradient;ctx.fillRect(0,620,1024,532);
-   const wrap=(text,maxWidth,font)=>{ctx.font=font;const words=String(text||'').split(/\s+/);const lines=[];let line='';for(const word of words){const next=line?line+' '+word:word;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=word;}else line=next;}if(line)lines.push(line);return lines;};
-   const headline=String(slide?.headline||'').slice(0,110),body=String(slide?.body||'').slice(0,180);
-   ctx.fillStyle='#8bbcff';ctx.font='700 22px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText('KURZER PRODUKTCHECK',64,780);
-   ctx.fillStyle='#ffffff';const titleLines=wrap(headline,896,'700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
-   let y=842;for(const line of titleLines){ctx.font='700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=54;}
-   ctx.fillStyle='#d7e2f2';const bodyLines=wrap(body,896,'400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
-   y+=12;for(const line of bodyLines){ctx.font='400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=37;}
+   const headlines=[
+    'ICH, WENN ICH DAS ENTDECKE 😳',
+    'ABER DAS IST DER EIGENTLICHE GRUND',
+    'WÜRDEST DU ES KAUFEN?'
+   ];
+   const bodies=[
+    'Warte auf Slide 2 →',
+    'Genau dieses Detail macht den Unterschied. →',
+    verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · Details ansehen →':'Preis aktuell beim Händler prüfen →'
+   ];
+   const drawText=(text,x,y,font)=>{
+    ctx.save();ctx.font=font;ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.shadowColor='rgba(0,0,0,.78)';ctx.shadowBlur=7;ctx.shadowOffsetX=1;ctx.shadowOffsetY=2;
+    ctx.fillStyle='#fff';ctx.fillText(text,x,y);ctx.restore();
+   };
+   const wrap=(text,maxWidth,font,maxLines)=>{
+    ctx.font=font;const words=String(text||'').replace(/\\s+/g,' ').trim().split(' ');const lines=[];let line='';
+    for(const word of words){const next=line?line+' '+word:word;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=word;}else line=next;}
+    if(line)lines.push(line);
+    if(lines.length>maxLines){lines.length=maxLines;let last=lines[maxLines-1];while(last&&ctx.measureText(last+'…').width>maxWidth)last=last.slice(0,-1);lines[maxLines-1]=last.trim()+'…';}
+    return lines;
+   };
+   // Plain Snapchat-like white text; no badges, cards or decorative panels.
+   const headline=wrap(headlines[index],900,'700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+   let y=index===0?150:890;
+   headline.forEach(line=>{drawText(line,62,y,'700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');y+=59;});
+   const body=wrap(bodies[index],900,'600 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+   y+=16;body.forEach(line=>{drawText(line,62,y,'600 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');y+=43;});
+   if(index===1){
+    // Minimal white pointer arrows to direct attention to visible product details.
+    ctx.save();ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=6;ctx.lineCap='round';ctx.shadowColor='rgba(0,0,0,.7)';ctx.shadowBlur=6;
+    const arrows=[[245,450,330,535],[780,475,690,555]];
+    for(const [x1,y1,x2,y2] of arrows){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();const angle=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-23*Math.cos(angle-.5),y2-23*Math.sin(angle-.5));ctx.lineTo(x2-23*Math.cos(angle+.5),y2-23*Math.sin(angle+.5));ctx.closePath();ctx.fill();}
+    ctx.restore();
+   }
+   if(index===2){
+    const question='Team Ja oder Nein? Schreib’s in die Kommentare!';
+    const q=wrap(question,900,'600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+    let qy=1010;q.forEach(line=>{drawText(line,62,qy,'600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');qy+=39;});
+   }
    resolve(canvas.toDataURL('image/png'));
-  };img.onerror=()=>reject(new Error('Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
+  };img.onerror=()=>reject(new Error('KI-Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
  });
 }
 async function generateSlideImages(postId){
@@ -263,35 +291,41 @@ async function generateSlideImages(postId){
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
  const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
- if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
+ if(!endpoint||!token){toast('Die gespeicherte Cloudflare-Worker-Verbindung fehlt. Bitte Verbindung in den Einstellungen erneut hinterlegen.');return;}
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
- if(!referenceSources.length){toast('Kein gespeichertes Produktbild gefunden.');return;}
- let referenceImages;
- try{referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));}catch(error){toast(error.message||'Referenzbilder konnten nicht vorbereitet werden.');return;}
+ if(!referenceSources.length){toast('Kein gespeichertes Produktfoto gefunden.');return;}
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
- if(button){button.disabled=true;button.textContent='Generierung läuft …';}
+ if(button){button.disabled=true;button.textContent='KI generiert Slides …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
+ const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
+ const verifiedPrice=priceVerified?Number(product.price):null;
  try{
-  for(let i=0;i<post.draft.slides.length;i++){
-   if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
-   const slide=post.draft.slides[i];
-   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact same product. Use the references together to preserve the exact product identity, shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
+  const referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));
+  for(let i=0;i<3;i++){
+   if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert …';
+   const slide=post.draft.slides[i]||{};
+   const base='Create an imperfect authentic real smartphone photo that looks exactly like it was taken with an iPhone 12. Strong smartphone aesthetic, slightly imperfect phone quality, natural camera noise, realistic natural light, casual framing, spontaneous unpolished UGC look. 8:9 portrait composition. It must look like a normal person took it with their phone, not a professional studio or commercial advertisement. Absolutely no text, letters, captions, logos, watermarks, graphic design, borders or collage. The supplied reference photos are strict identity references: preserve the exact product design, color, seams, pockets, zippers, labels and proportions; do not invent product features. Product: '+product.name+'. ';
+   const directions=[
+    'Scene: a believable everyday reaction / POV moment that makes someone stop scrolling. Show a relatable adult reacting naturally to discovering or seeing this exact product, with the product clearly visible in the scene. Expressive but not exaggerated. Composition should create curiosity and make viewers want to swipe to the next image.',
+    'Scene: a normal candid real-life use situation showing how this exact product fits into everyday life and the feeling or practical benefit it offers. Product must be prominent and recognizable. Leave some clean visual space around relevant visible details for simple white pointer arrows to be added later. No staged catalog pose.',
+    'Scene: a strong but believable final product hero photo in a real everyday environment, close enough to see the exact item clearly. Casual iPhone snapshot, natural perspective, product fully recognizable, visually clean enough for a short CTA and price overlay.'
+   ];
    const start=(i*2)%referenceImages.length;
    const selectedReferences=referenceImages.length<=4?referenceImages:Array.from({length:4},(_,offset)=>referenceImages[(start+offset)%referenceImages.length]);
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:selectedReferences})});
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:selectedReferences})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
-   const finalImage=await cropImageToEightNinths(payload.imageDataUrl,slide);
-   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9'};
+   const finalImage=await composeGeneratedSlide(payload.imageDataUrl,slide,i,product,verifiedPrice);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:start};
    await db.put('posts',post);
   }
-  post.draft.productionStatus='Drei generierte 8:9-Bilddateien lokal gespeichert. Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
-  post.status='Bilder generiert – Freigabe offen';post.updatedAt=new Date().toISOString();
-  await db.put('posts',post);log('Drei BOFU-Slides generiert',post.title);
-  state.selectedPostId=post.id;renderPage();toast('Drei Slides in Northstar gespeichert.');
+  post.draft.productionStatus='Drei KI-generierte 8:9-iPhone-UGC-Slides erstellt. Texte separat eingeblendet; Preis nur bei verifiziertem Datensatz angezeigt.';
+  post.status='KI-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
+  await db.put('posts',post);log('Drei KI-UGC-Slides generiert',post.title);
+  state.selectedPostId=post.id;renderPage();toast('Drei KI-generierte Slides gespeichert.');
  }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Bildgenerierung fehlgeschlagen: '+error.message);}
- finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 Slides jetzt generieren';}}
+ finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 KI-Slides generieren';}}
 }
 async function handlePostAction(action,id){
  const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
