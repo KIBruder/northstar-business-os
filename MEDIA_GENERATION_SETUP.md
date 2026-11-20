@@ -3,7 +3,7 @@
 ## Architektur
 - Northstar sendet bis zu drei hochgeladene Produktreferenzen an den geschützten Cloudflare Worker unter `/api/analyze-product`.
 - `@cf/moondream/moondream3.1-9B-A2B` analysiert die tatsächlichen Bilder: Produktart, sichtbare Identitätsmerkmale, Komponenten und Unsicherheiten.
-- `@cf/meta/llama-3.1-8b-instruct` erstellt daraus einen strukturierten, kategorieunabhängigen Drei-Slide-BOFU-Plan mit Hooks und passenden Bildszenen.
+- `@cf/meta/llama-3.2-3b-instruct` erstellt daraus einen strukturierten, kategorieunabhängigen Drei-Slide-BOFU-Plan mit Hooks und passenden Bildszenen.
 - Northstar speichert das KI-Ergebnis lokal am Produkt und verwendet es für Content-Brief, Video-Szenen und FLUX-Prompts.
 - `@cf/black-forest-labs/flux-2-klein-4b` erzeugt die drei 8:9-Bilder und erhält bis zu drei Referenzansichten des Produkts.
 - Produktdaten und generierte Bilder werden lokal in IndexedDB gespeichert. Es gibt keine automatische TikTok-Veröffentlichung.
@@ -24,7 +24,7 @@
 5. Für bestehende Produkte kann die KI beim Start der FLUX-Bildproduktion nachträglich analysieren.
 
 ## KI-Modelle und Kostenkontrolle
-- Vision: `@cf/moondream/moondream3.1-9B-A2B`.
+- Cloudflare Workers AI enthält laut aktueller Preisseite eine kostenlose Zuteilung von 10.000 Neurons pro Tag. Bei Überschreitung schlagen weitere Anfragen im Free-Plan fehl; es erfolgt kein automatischer kostenpflichtiger Wechsel.\n- Vision: `@cf/moondream/moondream3.1-9B-A2B`.
 - Text/Creative-Strategie: `@cf/meta/llama-3.1-8b-instruct`.
 - Bildproduktion: `@cf/black-forest-labs/flux-2-klein-4b`.
 - Jede Produktanalyse verbraucht Workers-AI-Inferenzkontingent; drei Bildgenerierungen verbrauchen zusätzlich Bildmodellkontingent.
