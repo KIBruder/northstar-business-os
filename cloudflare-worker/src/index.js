@@ -60,7 +60,7 @@ async function analyzeProduct(request, env, cors) {
  const textPrompt = `Du bist die universelle Produkt- und Creative-Direktion von Northstar. Erstelle aus den gelieferten visuellen Beobachtungen und Produktdaten einen belastbaren Drei-Slide-BOFU-Plan für GENAU dieses Produkt. Funktioniere für JEDE Produktkategorie, ohne fest codierte Kategorien oder Beispielannahmen. Leite Kategorie und passende Nutzungssituation aus den Bildbeobachtungen ab. Das Produkt muss in jedem Motiv das klare Hauptmotiv sein. Keine generischen Personenporträts, in denen das Produkt fehlt. Erfinde keine technischen Daten, Materialien, Lieferumfänge, Vorteile, Preise oder Funktionen. Trenne klar sichtbare Fakten von Unsicherheiten. Gib ausschließlich valides JSON ohne Markdown mit exakt diesen Feldern zurück: {"productName":"...","category":"...","summary":"...","visibleIdentity":"...","verifiedVisibleFeatures":"...","unknowns":["..."],"audience":"...","hooks":["Hook kurz","Produktdetail kurz","CTA-Frage kurz"],"slideScenes":["konkretes Bildmotiv für Hook, Produkt sofort sichtbar","konkretes Produktdetail-Motiv, tatsächliches Produkt groß und klar","konkretes Abschluss-/Nutzungsmotiv, Produkt sichtbar und unverdeckt"],"negativePrompt":"..."}. Hooks und Bildmotive auf Deutsch. Keine pauschalen Werbeversprechen. Produktdaten: Name=${String(product.name||'').slice(0,180)}; Beschreibung=${String(product.description||'').slice(0,1200)}; Händler=${String(product.merchant||'').slice(0,100)}. Visuelle Analyse je Referenzbild: ${visualNotes.map((x,i)=>'Bild '+(i+1)+': '+x).join('\\n')} `;
  const generated = await env.AI.run(TEXT_MODEL, { prompt:textPrompt, max_tokens:1300, temperature:0.25 });
  const raw = String(generated?.response||generated?.result||'').trim();
- const match = raw.match(/\\{[\\s\\S]*\\}/);
+ const match = raw.match(/\{[\s\S]*\}/);
  if (!match) return json({ error: 'Die Produkt-KI lieferte kein auswertbares JSON. Bitte erneut versuchen.' }, 502, cors);
  let analysis;
  try { analysis = JSON.parse(match[0]); } catch { return json({ error: 'Die Produkt-KI lieferte ungültige strukturierte Daten. Bitte erneut versuchen.' }, 502, cors); }
@@ -70,7 +70,7 @@ async function analyzeProduct(request, env, cors) {
 }
 
 function decodeImage(value,index) {
- const match=typeof value==='string'&&value.match(/^data:image\\/(png|jpe?g|webp);base64,([A-Za-z0-9+\\/=]+)$/i);
+ const match=typeof value==='string'&&value.match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
  if(!match)throw new Error('Ungültige Bildreferenz '+(index+1)+' (PNG, JPEG oder WebP erwartet).');
  const binary=atob(match[2]);
  if(binary.length>8*1024*1024)throw new Error('Referenzbild '+(index+1)+' zu groß (max. 8 MB).');
