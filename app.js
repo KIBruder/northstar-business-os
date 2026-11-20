@@ -878,13 +878,22 @@ async function saveProduct(event){
 }
 async function runLocalProductAnalysis(id){
  const p=state.products.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!p)return;
- const analysis=analyzeProductLocally(p);
- p.analysis={
-  ...analysis,createdAt:new Date().toISOString()
- };
- p.status='Analyse abgeschlossen';p.updatedAt=new Date().toISOString();
- await db.put('products',p);log('Lokale Produktanalyse abgeschlossen',`${p.name} · Datenvollständigkeit ${analysis.score}/100`);
- state.selectedProductId=p.id;renderPage();toast('Lokale Basisanalyse abgeschlossen.');
+ const hasImages=[...(Array.isArray(p.referenceImagesDataUrls)?p.referenceImagesDataUrls:[]),p.imageDataUrl,...(p.screenshotDataUrls||[])].some(x=>typeof x==='string'&&x.startsWith('data:image/'));
+ try{
+  if(hasImages){
+   await requestProductAIAnalysis(p);
+   p.status='KI-Produktanalyse abgeschlossen';p.updatedAt=new Date().toISOString();
+   await db.put('products',p);log('KI-Produktanalyse abgeschlossen',p.name);
+   toast('KI hat das Produkt und passende Content-Winkel analysiert.');
+  }else{
+   const analysis=analyzeProductLocally(p);
+   p.analysis={...analysis,createdAt:new Date().toISOString()};
+   p.status='Lokale Basisanalyse abgeschlossen';p.updatedAt=new Date().toISOString();
+   await db.put('products',p);log('Lokale Produktanalyse abgeschlossen',`${p.name} · Datenvollständigkeit ${analysis.score}/100`);
+   toast('Keine Produktbilder vorhanden. Lokale Basisanalyse abgeschlossen.');
+  }
+ }catch(error){toast('KI-Produktanalyse fehlgeschlagen: '+(error.message||'Unbekannter Fehler'));}
+ state.selectedProductId=p.id;renderPage();
 }
 async function handleProductAction(action,id){
  const p=state.products.find(x=>x.id===id);if(!p)return;
