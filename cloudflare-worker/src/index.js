@@ -100,8 +100,13 @@ async function syncApi(request, env, cors) {
  try {
   if (request.method === 'GET') {
    const workspaceId = new URL(request.url).searchParams.get('workspaceId');
-   if (!workspaceId || workspaceId.length>128) return json({error:'workspaceId fehlt oder ist ungültig.'},400,cors);
+   if (workspaceId && workspaceId.length>128) return json({error:'workspaceId ist ungültig.'},400,cors);
    const result={};
+   if (!workspaceId) {
+    const rows=await db.prepare('SELECT id,payload_json,updated_at FROM workspaces WHERE owner_sub=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject).all();
+    result.workspaces=rows.results.map(row=>({id:row.id,...JSON.parse(row.payload_json),updatedAt:row.updated_at}));
+    return json({workspaceId:null,stores:result},200,cors);
+   }
    for (const [store, table] of Object.entries(SYNC_TABLES)) {
     const rows = store==='workspaces'
      ? await db.prepare('SELECT id, payload_json, updated_at FROM workspaces WHERE owner_sub = ? AND id = ? AND deleted_at IS NULL LIMIT 1').bind(subject,workspaceId).all()
