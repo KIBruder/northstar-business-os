@@ -18,19 +18,19 @@ export default {
    const prompt = String(body.prompt || '').trim();
    const images = Array.isArray(body.images) ? body.images : [];
    if (!prompt || prompt.length > 12000) return json({ error: 'Prompt fehlt oder ist zu lang.' }, 400, cors);
-   if (images.length > 1) return json({ error: 'Maximal ein Referenzbild pro Slide.' }, 400, cors);
+   if (images.length > 4) return json({ error: 'FLUX.2 Klein unterstützt maximal vier Referenzbilder pro Slide.' }, 400, cors);
    const form = new FormData();
    form.append('prompt', prompt);
    form.append('width', '1024');
    form.append('height', '1152');
-   if (images.length) {
-    const match = typeof images[0] === 'string' && images[0].match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
-    if (!match) return json({ error: 'Ungültige Bildreferenz (PNG, JPEG oder WebP erwartet).' }, 400, cors);
+   for (let i = 0; i < images.length; i++) {
+    const match = typeof images[i] === 'string' && images[i].match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
+    if (!match) return json({ error: 'Ungültige Bildreferenz '+(i+1)+' (PNG, JPEG oder WebP erwartet).' }, 400, cors);
     const binary = atob(match[2]);
-    if (binary.length > 8 * 1024 * 1024) return json({ error: 'Referenzbild zu groß (max. 8 MB).' }, 413, cors);
+    if (binary.length > 8 * 1024 * 1024) return json({ error: 'Referenzbild '+(i+1)+' zu groß (max. 8 MB).' }, 413, cors);
     const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
     const mime = match[1].toLowerCase().replace('jpg','jpeg');
-    form.append('input_image_0', new Blob([bytes], { type: 'image/' + mime }), 'reference.' + (mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1]));
+    form.append('input_image_'+i, new Blob([bytes], { type: 'image/' + mime }), 'reference-'+(i+1)+'.'+(mime === 'image/jpeg' ? 'jpg' : mime.split('/')[1]));
    }
    const serialized = new Response(form);
    const result = await env.AI.run(MODEL, { multipart: { body: serialized.body, contentType: serialized.headers.get('content-type') } });
