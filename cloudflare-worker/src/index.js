@@ -93,8 +93,8 @@ function json(data,status,headers) {
 async function syncApi(request, env, cors) {
  if (!['GET','POST'].includes(request.method)) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
  let subject;
- try { subject = await verifyAccessJwt(request,env); }
- catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.'},401,cors); }
+ try { subject = await verifySessionToken(request, env); }
+ catch (error) { return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors); }
  const db = env.DB || env.db;
  if (!db) return json({error:'D1-Binding DB/db ist nicht konfiguriert.'},503,cors);
  try {
