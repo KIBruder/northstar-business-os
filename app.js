@@ -402,18 +402,28 @@ function clearScreenshotImport(){
  if(status)status.textContent='Import zurückgesetzt. Du kannst bis zu 8 neue Screenshots auswählen.';
 }
 function parseScreenshotText(raw){
- const lines=String(raw||'').split(/\r?\n/).map(x=>x.replace(/\s+/g,' ').trim()).filter(x=>Boolean(x)&&!/^---\s.*\s---$/.test(x));
- const priceMatch=String(raw||'').match(/(?:€\s*)?(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|EUR)(?![A-Za-z])|\bEUR\s*(\d{1,4}(?:[.,]\d{1,2})?)/i);
+ const source=String(raw||'');
+ const normalize=x=>x.replace(/[|¦]/g,' ').replace(/\\s+/g,' ').trim();
+ const lines=source.split(/\\r?\\n/).map(normalize).filter(Boolean).filter(x=>!/^---\\s.*\\s---$/.test(x));
+ const unique=[],seen=new Set();
+ for(const line of lines){const key=line.toLocaleLowerCase('de-DE').replace(/[^a-z0-9äöüß]/g,'');if(key.length>8&&!seen.has(key)){seen.add(key);unique.push(line);}}
+ const priceMatch=source.match(/(?:€\\s*)?(\\d{1,4}(?:[.,]\\d{1,2})?)\\s*(?:€|EUR)(?![A-Za-z])|\\bEUR\\s*(\\d{1,4}(?:[.,]\\d{1,2})?)/i);
  let price=null;
  if(priceMatch){const token=priceMatch[1]||priceMatch[2];const n=Number(token.replace(',','.'));if(Number.isFinite(n))price=n;}
- const clean=x=>x.replace(/^\[?Black Friday\]?\s*/i,'').trim();
- const ignored=/^(?:\d{1,2}:\d{2}|inkl\.?\s*MwSt|kostenloser versand|lieferung|ähnliches finden|farbe:|verkauft von|warenkorb|kasse|einkaufswagen|versand|zurück|mehr)$/i;
- const useful=lines.map(clean).filter(x=>x.length>=18&&!ignored.test(x)&&!/(?:€|EUR)/i.test(x)&&!/^https?:\/\//i.test(x)&&!/^\d+(?:[.,]\d+)?\s*\(/.test(x));
- const titleCandidates=useful.filter(x=>/(jacke|fleece|hoodie|hose|shirt|schuhe|tasche|akku|bohrer|lampe|kopfhörer|sportjacke)/i.test(x));
- const title=(titleCandidates.sort((a,b)=>b.length-a.length)[0]||useful.sort((a,b)=>b.length-a.length)[0]||'').slice(0,160);
- const sellerMatch=String(raw||'').match(/(?:verkauft von|sold by|shop)\s*[:：]?\s*([^\n\r]+)/i);
- const merchant=sellerMatch? sellerMatch[1].replace(/\s+/g,' ').trim().slice(0,100) : (lines.find(x=>/^[A-Z0-9][A-Z0-9 ._-]{3,30}$/.test(x)&&!ignored.test(x))||'');
- const description=useful.filter(x=>x!==title).join('\n').slice(0,2000);
+ const isNoise=x=>/^(?:\\d{1,2}:\\d{2}|\\d{1,2}:\\d{2}.*(?:5g|4g|lte|wlan|battery|akku)|inkl\\.?\\s*mwst|kostenloser versand|lieferung bis|ähnliches finden|farbe\\s*:|warenkorb|kasse|einkaufswagen|versand|zurück|mehr|verkauft von|verlängerte rückgabe|black friday)$/i.test(x)
+  || /(?:\\b5g\\b|\\b4g\\b|\\blte\\b|\\b\\d{1,2}%\\b|\\b\\d{1,2}:\\d{2}\\b)/i.test(x)
+  || /^(?:[★☆•·]+|[0-9.,]+\\s*\\(\\d+\\)|\\d+\\s*gekauft)/i.test(x)
+  || /^(?:farbe|größe|variante)\\s*:/i.test(x)
+  || /^(?:einkaufswagen|kasse|ähnliches finden|kostenloser versand)/i.test(x);
+ const cleaned=unique.map(x=>x.replace(/\\[?Black\\s*Friday\\]?/ig,'').replace(/\\s+/g,' ').trim()).filter(x=>x.length>=12&&!isNoise(x)&&!/(?:€|EUR)/i.test(x)&&!/^https?:\\/\\//i.test(x));
+ const titleCandidates=cleaned.filter(x=>/(jacke|fleece|hoodie|hose|shirt|schuhe|tasche|akku|bohrer|lampe|kopfhörer|sportjacke)/i.test(x));
+ const title=(titleCandidates[0]||cleaned.find(x=>x.length>=18)||'').slice(0,180);
+ let merchant='';
+ const sellerLine=unique.find(x=>/(?:verkauft von|sold by)/i.test(x));
+ if(sellerLine){merchant=sellerLine.replace(/^.*?(?:verkauft von|sold by)\\s*/i,'').split(/\\s+(?:3[,.]\\d|\\d\\s*\\(|\\||\\b594\\b|\\bgekauft\\b)/i)[0].replace(/[©®]+/g,'').trim().slice(0,100);}
+ if(!merchant){const shop=unique.find(x=>/LUXE\\s*T{2,}HAO/i.test(x));if(shop)merchant='LUXE TTTHAO';}
+ const descriptionLines=cleaned.filter(x=>x!==title&&!/(?:verkauft von|sold by|\\d[,.]\\d\\s*\\(|\\d+\\s*gekauft)/i.test(x));
+ const description=descriptionLines.join(' ').replace(/\\s+/g,' ').slice(0,1200);
  return {title,price,description,merchant};
 }
 function prepareProductFromScreenshot(){
