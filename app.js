@@ -513,7 +513,8 @@ async function allocateFund(){
 }
 
 function simplePage(id){
- if(id==='agents')return agentsPage();if(id==='finance')return financePage();\n const [title,eyebrow,desc,note]=simplePages[id]; header(title,eyebrow);
+ if(id==='agents')return agentsPage();if(id==='finance')return financePage();
+ const [title,eyebrow,desc,note]=simplePages[id]; header(title,eyebrow);
  return `<div class="hero-panel"><div class="hero-icon">${sections.find(s=>s[0]===id)?.[2]||'•'}</div><div><h2>${title}</h2><p>${desc}</p></div></div><div class="panel"><h3>Modulstatus</h3><p class="muted">Grundstruktur angelegt · Fachfunktionen werden in den nächsten Entwicklungsstufen integriert.</p><div class="progress-track"><span style="width:12%"></span></div><small class="muted">Grundgerüst: Navigation und lokale Datenbasis vorhanden</small></div><div class="notice"><strong>Umsetzungsregel</strong><span>${note}</span></div>`;
 }
 function renderPage(){
@@ -545,7 +546,10 @@ function renderPage(){
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
  if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
- $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);\n document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));\n $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFundRate')?.addEventListener('click',saveFundRate);$('#allocateFund')?.addEventListener('click',allocateFund);\n $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
+ $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
+ document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
+ $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFundRate')?.addEventListener('click',saveFundRate);$('#allocateFund')?.addEventListener('click',allocateFund);
+ $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
  $('#saveMediaSettings')?.addEventListener('click',saveMediaSettings);
