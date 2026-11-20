@@ -10,7 +10,7 @@ export default {
  async fetch(request, env) {
   const origin = request.headers.get('Origin') || '';
   const allowedOrigin = env.ALLOWED_ORIGIN || 'https://kibruder.github.io';
-  const cors = { 'Access-Control-Allow-Origin': allowedOrigin, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Vary': 'Origin' };
+  const cors = { 'Access-Control-Allow-Origin': allowedOrigin, 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Credentials': 'true', 'Vary': 'Origin' };
   if (origin && origin !== allowedOrigin) return json({ error: 'Origin nicht erlaubt.' }, 403, cors);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   const url = new URL(request.url);
