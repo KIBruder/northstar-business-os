@@ -596,8 +596,9 @@ async function syncAllData(){
    const rows=[...merged.values()];
    for(const item of rows)await db.put(store,item);
    const records=rows.filter(item=>store==='workspaces'||item.workspaceId===workspace.id).map(item=>({store,item}));
-   if(records.length){
-    const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records})});
+   for(let offset=0;offset<records.length;offset+=500){
+    const batch=records.slice(offset,offset+500);
+    const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records:batch})});
     const result=await saved.json();if(!saved.ok)throw new Error(result.error||'Cloud-Speicherung fehlgeschlagen.');
    }
   }
