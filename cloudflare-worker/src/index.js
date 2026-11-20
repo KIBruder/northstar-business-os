@@ -14,7 +14,10 @@ export default {
   if (origin && origin !== allowedOrigin) return json({ error: 'Origin nicht erlaubt.' }, 403, cors);
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   const url = new URL(request.url);
-  if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
+  if (url.pathname.endsWith('/api/auth/register')) return await authApi(request, env, cors, 'register');
+   if (url.pathname.endsWith('/api/auth/login')) return await authApi(request, env, cors, 'login');
+   if (url.pathname.endsWith('/api/auth/me')) return await authApi(request, env, cors, 'me');
+   if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (!env.AI || !env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Cloudflare-AI-Binding oder Zugriffstoken fehlt.' }, 503, cors);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Nicht autorisiert.' }, 401, cors);
@@ -90,8 +93,8 @@ function json(data,status,headers) {
 async function syncApi(request, env, cors) {
  if (!['GET','POST'].includes(request.method)) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
  let subject;
- try { subject = await verifyAccessJwt(request,env); }
- catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.'},401,cors); }
+ try { subject = await verifySessionToken(request, env); }
+ catch (error) { return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors); }
  const db = env.DB || env.db;
  if (!db) return json({error:'D1-Binding DB/db ist nicht konfiguriert.'},503,cors);
  try {
@@ -133,35 +136,78 @@ async function syncApi(request, env, cors) {
  }
 }
 
-async function verifyAccessJwt(request,env) {
- const token=request.headers.get('Cf-Access-Jwt-Assertion');
- if(!token) throw new Error('Missing Cf-Access-Jwt-Assertion');
- const rawTeam=String(env.ACCESS_TEAM_DOMAIN||'');
- const team=rawTeam.endsWith('/')?rawTeam.slice(0,-1):rawTeam;
- const audience=String(env.ACCESS_AUD||'');
- if(!team||!audience) throw new Error('ACCESS_TEAM_DOMAIN and ACCESS_AUD are required');
- const parts=token.split('.');
- if(parts.length!==3) throw new Error('Malformed JWT');
- const decodePart=value=>JSON.parse(atob(value.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(value.length/4)*4,'=')));
- const header=decodePart(parts[0]), claims=decodePart(parts[1]);
- if(header.alg!=='RS256'||!header.kid) throw new Error('Unsupported JWT algorithm');
- const now=Math.floor(Date.now()/1000);
- if(claims.iss!==team) throw new Error('Invalid issuer');
- const aud=Array.isArray(claims.aud)?claims.aud:[claims.aud];
- if(!aud.includes(audience)) throw new Error('Invalid audience');
- if(!claims.sub||!claims.exp||claims.exp<=now||(claims.nbf&&claims.nbf>now)) throw new Error('Invalid token timing or subject');
- let keys=jwksCache.get(team);
- if(!keys||keys.expires<Date.now()) {
-  const response=await fetch(team+'/cdn-cgi/access/certs');
-  if(!response.ok) throw new Error('Unable to load Access signing keys');
-  keys={keys:(await response.json()).keys,expires:Date.now()+300000};
-  jwksCache.set(team,keys);
+
+async function authApi(request, env, cors, action) {
+ if (request.method !== 'POST' && !(action === 'me' && request.method === 'GET')) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
+ const db=env.DB||env.db;
+ if(!db) return json({error:'D1-Datenbank ist nicht konfiguriert.'},503,cors);
+ if(!env.NORTHSTAR_AUTH_SECRET || String(env.NORTHSTAR_AUTH_SECRET).length<32) return json({error:'NORTHSTAR_AUTH_SECRET fehlt oder ist zu kurz (mindestens 32 Zeichen).'},503,cors);
+ try {
+  if(action==='me') {
+   const subject=await verifySessionToken(request,env);
+   const user=await db.prepare('SELECT id,email,created_at FROM users WHERE id=? AND disabled_at IS NULL').bind(subject).first();
+   if(!user)return json({error:'Benutzerkonto nicht gefunden.'},401,cors);
+   return json({user:{id:user.id,email:user.email,createdAt:user.created_at}},200,cors);
+  }
+  const body=await request.json();
+  const email=String(body.email||'').trim().toLowerCase();
+  const password=String(body.password||'');
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>254) return json({error:'Bitte eine gültige E-Mail-Adresse eingeben.'},400,cors);
+  if(password.length<12||password.length>128) return json({error:'Das Passwort muss mindestens 12 und höchstens 128 Zeichen lang sein.'},400,cors);
+  let user;
+  if(action==='register') {
+   const existing=await db.prepare('SELECT COUNT(*) AS count FROM users').first();
+   if(Number(existing?.count||0)>0)return json({error:'Das private Northstar-Konto ist bereits eingerichtet. Weitere Registrierungen sind deaktiviert.'},403,cors);
+   const salt=crypto.getRandomValues(new Uint8Array(16));
+   const hash=await hashPassword(password,salt);
+   const id=crypto.randomUUID(), now=new Date().toISOString();
+   try {
+    await db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at,updated_at,disabled_at) VALUES (?,?,?,?,?,?,NULL)').bind(id,email,toBase64Url(salt),toBase64Url(hash),now,now).run();
+   } catch(error) {
+    if(/registration closed/i.test(String(error.message||error)))return json({error:'Das private Northstar-Konto ist bereits eingerichtet.'},403,cors);
+    if(/unique|constraint/i.test(String(error.message||error)))return json({error:'Für diese E-Mail-Adresse existiert bereits ein Konto.'},409,cors);
+    throw error;
+   }
+   user={id,email,created_at:now};
+  } else {
+   user=await db.prepare('SELECT id,email,password_salt,password_hash,created_at,disabled_at FROM users WHERE email=?').bind(email).first();
+   if(!user||user.disabled_at)return json({error:'E-Mail-Adresse oder Passwort ist falsch.'},401,cors);
+   const actual=await hashPassword(password,fromBase64Url(user.password_salt));
+   if(!constantTimeEqual(actual,fromBase64Url(user.password_hash)))return json({error:'E-Mail-Adresse oder Passwort ist falsch.'},401,cors);
+  }
+  const token=await createSessionToken(user.id,env);
+  return json({token,tokenType:'Bearer',expiresIn:604800,user:{id:user.id,email:user.email,createdAt:user.created_at}},200,cors);
+ } catch(error) {
+  return json({error:'Authentifizierung fehlgeschlagen.',detail:String(error.message||error)},500,cors);
  }
- const jwk=keys.keys.find(key=>key.kid===header.kid);
- if(!jwk) { jwksCache.delete(team); throw new Error('Unknown signing key'); }
- const key=await crypto.subtle.importKey('jwk',jwk,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
- const signature=Uint8Array.from(atob(parts[2].replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(parts[2].length/4)*4,'=')),c=>c.charCodeAt(0));
- const valid=await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,signature,new TextEncoder().encode(parts[0]+'.'+parts[1]));
- if(!valid) throw new Error('Invalid JWT signature');
+}
+async function hashPassword(password,salt) {
+ const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:120000},key,256));
+}
+function toBase64Url(bytes){let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function fromBase64Url(value){const raw=atob(String(value).replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-String(value).length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
+function constantTimeEqual(a,b){if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];return diff===0;}
+async function hmacKey(env,usage){return crypto.subtle.importKey('raw',new TextEncoder().encode(env.NORTHSTAR_AUTH_SECRET),{name:'HMAC',hash:'SHA-256'},false,usage);}
+async function createSessionToken(subject,env){
+ const now=Math.floor(Date.now()/1000);
+ const header=toBase64Url(new TextEncoder().encode(JSON.stringify({alg:'HS256',typ:'JWT'})));
+ const payload=toBase64Url(new TextEncoder().encode(JSON.stringify({sub:subject,iss:'northstar-business-os',aud:'northstar-app',iat:now,exp:now+604800})));
+ const input=header+'.'+payload;
+ const signature=await crypto.subtle.sign('HMAC',await hmacKey(env,['sign']),new TextEncoder().encode(input));
+ return input+'.'+toBase64Url(new Uint8Array(signature));
+}
+async function verifySessionToken(request,env){
+ if(!env.NORTHSTAR_AUTH_SECRET||String(env.NORTHSTAR_AUTH_SECRET).length<32)throw new Error('Auth secret unavailable');
+ const auth=request.headers.get('Authorization')||'';
+ if(!auth.startsWith('Bearer '))throw new Error('Missing bearer token');
+ const token=auth.slice(7),parts=token.split('.');
+ if(parts.length!==3)throw new Error('Malformed session token');
+ const decode=value=>JSON.parse(new TextDecoder().decode(fromBase64Url(value)));
+ const header=decode(parts[0]),claims=decode(parts[1]);
+ if(header.alg!=='HS256'||claims.iss!=='northstar-business-os'||claims.aud!=='northstar-app'||!claims.sub||!claims.exp||claims.exp<=Math.floor(Date.now()/1000))throw new Error('Invalid session claims');
+ const valid=await crypto.subtle.verify('HMAC',await hmacKey(env,['verify']),fromBase64Url(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1]));
+ if(!valid)throw new Error('Invalid session signature');
  return String(claims.sub);
 }
+
