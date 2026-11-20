@@ -719,8 +719,9 @@ function prepareProductFromScreenshot(){
  if(preview){preview.hidden=false;preview.innerHTML=`<img src="${pendingScreenshotDataUrl}" alt="Screenshot für Produktakte"><span>Screenshot wird beim Speichern lokal am Produkt hinterlegt.</span>`;}
  const status=$('#screenshotImportStatus');
  if(status)status.textContent='Screenshotdaten übernommen. Bitte Produktname und erkannte Angaben kurz prüfen. Nach dem Speichern startet Northstar automatisch den BOFU-Entwurf und erstellt drei Slides aus deinen Originalfotos.';
+ $('#saveProductButton').textContent='Produkt speichern + BOFU starten';
  $('#productFormPanel')?.scrollIntoView({behavior:'smooth',block:'start'});
- toast('Screenshotdaten zur Prüfung übernommen.');
+ toast('Screenshotdaten übernommen – nach dem Speichern startet die Produktion automatisch.');
 }
 function showProductForm(productId=null){
  const panel=$('#productFormPanel'), form=$('#productForm'); if(!panel||!form)return;
