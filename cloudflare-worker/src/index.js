@@ -88,11 +88,11 @@ function json(data,status,headers) {
 
 
 async function syncApi(request, env, cors) {
- if (!env.DB) return json({error:'D1-Binding DB ist nicht konfiguriert.'},503,cors);
  if (!['GET','POST'].includes(request.method)) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
  let subject;
  try { subject = await verifyAccessJwt(request,env); }
- catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.',detail:String(error.message||'JWT validation failed')},401,cors); }
+ catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.'},401,cors); }
+ if (!env.DB) return json({error:'D1-Binding DB ist nicht konfiguriert.'},503,cors);
  try {
   if (request.method === 'GET') {
    const workspaceId = new URL(request.url).searchParams.get('workspaceId');
