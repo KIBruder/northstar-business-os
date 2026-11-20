@@ -29,7 +29,7 @@ function renderNav(){
   $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[6],sections[5],sections[11]]);
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.nav)));
 }
-function go(id){active=id;renderNav();renderPage();$('#sideNav').classList.remove('open');$('#mobileMenu')?.setAttribute('aria-expanded','false');$('#mobileMenu')?.setAttribute('aria-label','Menü öffnen');}
+function go(id){active=id;renderNav();renderPage();$('.sidebar')?.classList.remove('open');$('#mobileMenu')?.setAttribute('aria-expanded','false');$('#mobileMenu')?.setAttribute('aria-label','Menü öffnen');}
 function header(title,sub){$('#pageTitle').textContent=title;$('#sectionEyebrow').textContent=sub;}
 function card(label,value,meta,icon='•'){return `<article class="metric-card"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon}</span></div><strong>${value}</strong><small>${meta}</small></article>`;}
 function empty(title,desc,action=''){return `<div class="empty-state"><div class="empty-icon">◇</div><h3>${title}</h3><p>${desc}</p>${action}</div>`;}
@@ -896,7 +896,7 @@ async function init(){
  $('#workspaceSelect').addEventListener('change',e=>{if(e.target.value==='__new'){addWorkspace();return;}state.workspaceId=e.target.value;renderPage();});
  $('#quickAdd').addEventListener('click',()=>{const choice=prompt('Was möchtest du anlegen?\\n1 = Produkt\\n2 = Content-Entwurf\\n3 = Arbeitsbereich'); if(choice==='1')addProduct();else if(choice==='2')addPost();else if(choice==='3')addWorkspace();});
  $('#settingsShortcut').addEventListener('click',()=>go('settings'));
- $('#mobileMenu')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const open=$('#sideNav').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));e.currentTarget.setAttribute('aria-label',open?'Menü schließen':'Menü öffnen');});
+ $('#mobileMenu')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const sidebar=$('.sidebar');if(!sidebar)return;const open=sidebar.classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));e.currentTarget.setAttribute('aria-label',open?'Menü schließen':'Menü öffnen');});
  if('serviceWorker' in navigator && location.protocol!=='file:'){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
 }
 init().catch(err=>{console.error(err);$('#page').innerHTML='<div class="notice"><strong>Startfehler</strong><span>Die lokale Datenbank konnte nicht initialisiert werden. Bitte Browser-Speicher prüfen und Seite neu laden.</span></div>';});
