@@ -22,6 +22,7 @@ The password is never stored in the browser. The Worker stores a salted PBKDF2-S
 ## Important security and rollout notes
 
 - Keep `NORTHSTAR_AUTH_SECRET` private. Rotating it invalidates existing sessions.
+- Initial rollout permits only one account. The database enforces this to prevent public open registration. Multi-user invitations can be added later.
 - The first account is not email-verified in this initial implementation. Use an email address you control and a unique password.
 - Add rate limiting, email verification, session revocation, and password reset before opening registration to the public.
 - Local IndexedDB remains the local copy. Cloud sync is manual and should be tested with non-critical sample data before relying on it as a backup.
