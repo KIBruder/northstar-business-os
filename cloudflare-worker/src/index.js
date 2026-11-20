@@ -115,7 +115,7 @@ async function syncApi(request, env, cors) {
    const item=record?.item;
    if (!SYNC_STORES.has(store) || !item || typeof item!=='object' || Array.isArray(item)) return json({error:'Ungültiger Datensatz.'},400,cors);
    const id=String(item.id||'');
-   const workspaceId=String(item.workspaceId||'');
+   const workspaceId=store==='workspaces'?id:String(item.workspaceId||'');
    if (!id || id.length>128 || !workspaceId || workspaceId.length>128) return json({error:'Datensatz-ID oder workspaceId fehlt.'},400,cors);
    if (store==='workspaces' && id!==workspaceId) return json({error:'Workspace-ID muss der Datensatz-ID entsprechen.'},400,cors);
    const payload=JSON.stringify(item);
