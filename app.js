@@ -232,7 +232,35 @@ function prepareFluxReferenceImage(dataUrl){
   };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
  });
 }
-function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice){
+function buildProductCreative(product){
+ const name=String(product?.name||'dieses Produkt').trim();
+ const description=String(product?.description||'').trim();
+ const lower=(name+' '+description).toLowerCase();
+ const usableDescription=description.length>15&&!/(?:\\b5g\\b|\\b4g\\b|\\blte\\b|\\d{1,2}:\\d{2}|©|[<>]{1,}|kostenloser versand|lieferung bis)/i.test(description);
+ const facts=usableDescription?description.slice(0,420):'';
+ let category='general',hook='POV: Dieses Produkt ist dir aufgefallen?',bridge='Schau dir Verarbeitung, Details und Lieferumfang genauer an. →',question='Wofür würdest du es nutzen?',scene='A believable everyday situation relevant to this exact product category.';
+ if(/jacke|fleece|mantel|hoodie|parka|weste|coat|jacket/.test(lower)){
+  category='apparel';hook='POV: Du suchst eine Jacke für den Alltag?';bridge='Achte auf Futter, Taschen, Verschlüsse und Passform. →';question='Würdest du diese Jacke im Alltag tragen?';scene='A casual real-life clothing moment: the exact jacket is worn or held naturally, with its original silhouette and visible construction clearly shown.';
+ }else if(/bohrer|schrauber|werkzeug|säge|fräse|zange|schleifer|tool|drill/.test(lower)){
+  category='tools';hook='POV: Das nächste Projekt wartet schon?';bridge='Prüfe Handhabung, Anschlüsse und den tatsächlichen Lieferumfang. →';question='Für welches Projekt würdest du es einsetzen?';scene='A believable home workshop or DIY setting, with the exact tool clearly visible and no invented accessories.';
+ }else if(/kopfhörer|headset|lautsprecher|mikrofon|speaker|earbuds/.test(lower)){
+  category='audio';hook='POV: Du willst dein Audio-Setup verbessern?';bridge='Achte auf Tragekomfort, Anschlüsse und Kompatibilität. →';question='Musik, Gaming oder Arbeit – wofür wäre es bei dir?';scene='A natural desk, commute or listening setting appropriate to the exact audio product; keep its design and controls unchanged.';
+ }else if(/handy|smartphone|tablet|laptop|monitor|kamera|phone|computer/.test(lower)){
+  category='electronics';hook='POV: Du überlegst, dein Setup aufzurüsten?';bridge='Vergleiche Anschlüsse, Kompatibilität und Lieferumfang. →';question='Wäre das ein Upgrade für dich?';scene='A casual everyday tech setup, with the exact device clearly visible and its ports, screen and proportions preserved.';
+ }else if(/lampe|licht|leuchte|led|beleuchtung/.test(lower)){
+  category='lighting';hook='POV: Deinem Raum fehlt noch das richtige Licht?';bridge='Achte auf Lichtwirkung, Platzierung und Bedienung. →';question='Wo würdest du diese Leuchte einsetzen?';scene='A believable room where the exact light product is naturally installed or placed; do not invent controls or lighting modes.';
+ }else if(/garten|rasen|pflanze|bewässer|mäher|heckenschere/.test(lower)){
+  category='garden';hook='POV: Das nächste Gartenprojekt steht an?';bridge='Prüfe Einsatzbereich, Handhabung und Zubehör. →';question='Wäre das in deinem Garten hilfreich?';scene='A realistic garden or outdoor setting suited to the exact product, without inventing accessories or capabilities.';
+ }else if(/küche|kochen|kaffee|pfanne|messer|staubsauger|haushalt/.test(lower)){
+  category='home';hook='POV: Ein Alltagsproblem soll einfacher werden?';bridge='Schau dir Handhabung, Reinigung und Lieferumfang an. →';question='Würde dir das den Alltag erleichtern?';scene='A lived-in home or kitchen setting appropriate to the exact product; show realistic scale and no invented parts.';
+ }
+ if(usableDescription){
+  const first=description.split(/[.!?\\n]/).map(x=>x.trim()).find(x=>x.length>18);
+  if(first)bridge=first.slice(0,105)+(first.length>105?'…':'')+' →';
+ }
+ return {name,category,hook,bridge,question,scene,facts,cta:'Aktuellen Preis und Details beim Händler prüfen →'};
+}
+function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creative){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
    const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
@@ -241,19 +269,12 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice){
    if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
    else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
    ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
-   const headlines=[
-    'ICH, WENN ICH DAS ENTDECKE 😳',
-    'ABER DAS IST DER EIGENTLICHE GRUND',
-    'WÜRDEST DU ES KAUFEN?'
-   ];
-   const bodies=[
-    'Warte auf Slide 2 →',
-    'Genau dieses Detail macht den Unterschied. →',
-    verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · Details ansehen →':'Preis aktuell beim Händler prüfen →'
-   ];
+   const headline=[creative.hook,creative.bridge,creative.question][index];
+   const priceLine=verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · '+creative.cta:creative.cta;
+   const body=[ 'Wisch weiter – der Blick auf die Details lohnt sich. →', creative.bridge, priceLine ][index];
    const drawText=(text,x,y,font)=>{
     ctx.save();ctx.font=font;ctx.textAlign='left';ctx.textBaseline='alphabetic';
-    ctx.shadowColor='rgba(0,0,0,.78)';ctx.shadowBlur=7;ctx.shadowOffsetX=1;ctx.shadowOffsetY=2;
+    ctx.shadowColor='rgba(0,0,0,.82)';ctx.shadowBlur=8;ctx.shadowOffsetX=1;ctx.shadowOffsetY=2;
     ctx.fillStyle='#fff';ctx.fillText(text,x,y);ctx.restore();
    };
    const wrap=(text,maxWidth,font,maxLines)=>{
@@ -263,23 +284,17 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice){
     if(lines.length>maxLines){lines.length=maxLines;let last=lines[maxLines-1];while(last&&ctx.measureText(last+'…').width>maxWidth)last=last.slice(0,-1);lines[maxLines-1]=last.trim()+'…';}
     return lines;
    };
-   // Plain Snapchat-like white text; no badges, cards or decorative panels.
-   const headline=wrap(headlines[index],900,'700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
-   let y=index===0?150:890;
-   headline.forEach(line=>{drawText(line,62,y,'700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');y+=59;});
-   const body=wrap(bodies[index],900,'600 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
-   y+=16;body.forEach(line=>{drawText(line,62,y,'600 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');y+=43;});
-   if(index===1){
-    // Minimal white pointer arrows to direct attention to visible product details.
-    ctx.save();ctx.strokeStyle='#fff';ctx.fillStyle='#fff';ctx.lineWidth=6;ctx.lineCap='round';ctx.shadowColor='rgba(0,0,0,.7)';ctx.shadowBlur=6;
-    const arrows=[[245,450,330,535],[780,475,690,555]];
-    for(const [x1,y1,x2,y2] of arrows){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();const angle=Math.atan2(y2-y1,x2-x1);ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-23*Math.cos(angle-.5),y2-23*Math.sin(angle-.5));ctx.lineTo(x2-23*Math.cos(angle+.5),y2-23*Math.sin(angle+.5));ctx.closePath();ctx.fill();}
-    ctx.restore();
-   }
+   // Minimal white Snapchat-style copy; no cards, stickers or decorative badges.
+   const headlineFont='700 46px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+   const bodyFont='600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+   const headlineLines=wrap(headline,900,headlineFont,2);
+   let y=index===0?145:875;
+   headlineLines.forEach(line=>{drawText(line,62,y,headlineFont);y+=57;});
+   const bodyLines=wrap(body,900,bodyFont,2);y+=14;
+   bodyLines.forEach(line=>{drawText(line,62,y,bodyFont);y+=40;});
    if(index===2){
-    const question='Team Ja oder Nein? Schreib’s in die Kommentare!';
-    const q=wrap(question,900,'600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
-    let qy=1010;q.forEach(line=>{drawText(line,62,qy,'600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');qy+=39;});
+    const q=wrap(creative.question,900,'700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+    let qy=Math.min(1080,y+16);q.forEach(line=>{drawText(line,62,qy,'700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');qy+=42;});
    }
    resolve(canvas.toDataURL('image/png'));
   };img.onerror=()=>reject(new Error('KI-Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
@@ -297,37 +312,37 @@ async function generateSlideImages(postId){
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
  if(button){button.disabled=true;button.textContent='KI generiert Slides …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
- const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
- const verifiedPrice=priceVerified?Number(product.price):null;
+ const verifiedPrice=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
+ const creative=buildProductCreative(product);
  try{
   const referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));
   for(let i=0;i<3;i++){
-   if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert …';
+   if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert – Originalreferenz wird einzeln geschützt …';
    const slide=post.draft.slides[i]||{};
-   const base='Create an imperfect authentic real smartphone photo that looks exactly like it was taken with an iPhone 12. Strong smartphone aesthetic, slightly imperfect phone quality, natural camera noise, realistic natural light, casual framing, spontaneous unpolished UGC look. 8:9 portrait composition. It must look like a normal person took it with their phone, not a professional studio or commercial advertisement. Absolutely no text, letters, captions, logos, watermarks, graphic design, borders or collage. The supplied reference photos are strict identity references: preserve the exact product design, color, seams, pockets, zippers, labels and proportions; do not invent product features. Product: '+product.name+'. ';
+   const selectedIndex=Math.min(i,referenceImages.length-1);
+   const base='Create a highly photorealistic imperfect iPhone 12 snapshot, 8:9 portrait. IMAGE-TO-IMAGE EDIT of the single supplied product reference, not a redesign and not a new interpretation. The exact physical product in the reference is the subject and must remain visually identical: preserve its silhouette, dimensions, color, fabric/material, seams, stitching, every zipper/button/pocket/label/logo placement and all small construction details. Do not replace, duplicate, simplify, beautify, stylize, repair, remove or invent any product part. Do not combine different product variants. Product identity has absolute priority over scene creativity. Keep the product large, sharp and unobstructed, occupying at least 55 percent of the frame. Natural ambient light, believable handheld smartphone perspective, mild phone-camera noise and realistic everyday background. No studio lighting, no catalog render, no text, no graphics, no arrows, no watermark, no extra accessories. Product name for context only: '+creative.name+'. Product category: '+creative.category+'. '+(creative.facts?'User-provided product description for context only (do not add anything not visible in reference): '+creative.facts:'No verified technical specifications supplied; do not invent product claims.')+' ';
    const directions=[
-    'Scene: a believable everyday reaction / POV moment that makes someone stop scrolling. Show a relatable adult reacting naturally to discovering or seeing this exact product, with the product clearly visible in the scene. Expressive but not exaggerated. Composition should create curiosity and make viewers want to swipe to the next image.',
-    'Scene: a normal candid real-life use situation showing how this exact product fits into everyday life and the feeling or practical benefit it offers. Product must be prominent and recognizable. Leave some clean visual space around relevant visible details for simple white pointer arrows to be added later. No staged catalog pose.',
-    'Scene: a strong but believable final product hero photo in a real everyday environment, close enough to see the exact item clearly. Casual iPhone snapshot, natural perspective, product fully recognizable, visually clean enough for a short CTA and price overlay.'
+    'Scene: authentic casual POV/reaction moment appropriate to '+creative.category+'. A real person may be partially visible only if it does not cover or alter the product; natural candid framing. Product remains the clear focal point and matches the supplied reference exactly. Create curiosity for the next slide.',
+    'Scene: believable everyday-use context for '+creative.category+'. Show the exact product naturally in use or placed in context, but do not invent how it works or add unseen features. Preserve the reference item exactly. Leave some clean space for a short white text overlay; no arrows because image details must not be guessed.',
+    'Scene: strong but believable final smartphone product photo in a real everyday environment. Show the exact same item from the supplied reference, unchanged, clearly and fully recognizable. Simple composition with negative space for a short white CTA.'
    ];
-   const start=(i*2)%referenceImages.length;
-   const selectedReferences=referenceImages.length<=4?referenceImages:Array.from({length:4},(_,offset)=>referenceImages[(start+offset)%referenceImages.length]);
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:selectedReferences})});
+   // One reference per generation prevents the model blending different angles or variants.
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:[referenceImages[selectedIndex]]})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
-   const finalImage=await composeGeneratedSlide(payload.imageDataUrl,slide,i,product,verifiedPrice);
-   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:start};
+   const finalImage=await composeGeneratedSlide(payload.imageDataUrl,slide,i,product,verifiedPrice?Number(product.price):null,creative);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:selectedIndex,referenceCount:1};
    await db.put('posts',post);
   }
-  post.draft.productionStatus='Drei KI-generierte 8:9-iPhone-UGC-Slides erstellt. Texte separat eingeblendet; Preis nur bei verifiziertem Datensatz angezeigt.';
+  post.draft.productionStatus='Drei KI-generierte 8:9-iPhone-UGC-Slides erstellt. Pro Slide wurde genau eine Produktreferenz verwendet; Textauswahl produktbezogen. Bilddetails vor Veröffentlichung visuell gegen das Original prüfen.';
   post.status='KI-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
   await db.put('posts',post);log('Drei KI-UGC-Slides generiert',post.title);
-  state.selectedPostId=post.id;renderPage();toast('Drei KI-generierte Slides gespeichert.');
+  state.selectedPostId=post.id;renderPage();toast('Drei KI-Slides mit produktbezogenen Texten gespeichert.');
  }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Bildgenerierung fehlgeschlagen: '+error.message);}
  finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 KI-Slides generieren';}}
 }
-async function handlePostAction(action,id){
+async function handlePostAction(action,id){async function handlePostAction(action,id){
  const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
  if(action==='open'){state.selectedPostId=id;renderPage();$('#contentDetail')?.scrollIntoView({behavior:'smooth',block:'start'});return;}
  if(action==='delete'){
@@ -356,11 +371,13 @@ async function generateContentDraft(postId){
  const priceText=priceVerified?`Preis laut geprüftem Datensatz: ${product.price} €.`:'Keinen Preis nennen: Preis fehlt oder ist nicht als verifiziert markiert.';
  const sourceText=source?'Quellenlink ist hinterlegt, aber nicht automatisch unabhängig geprüft.':'Noch keine Produktquelle hinterlegt.';
  const title=name.replace(/[.!?]+$/,'');
+ const creative=buildProductCreative(product);
  const slides=[
-  {role:'1 · Hook / Scroll-Stopper',headline:`Bevor du diese ${title} kaufst …`,body:'Ein konkreter Kaufcheck statt leerer Werbeversprechen. In den ersten Sekunden das Originalprodukt zeigen.',visualNote:'Vertikales 9:16-Standbild oder kurzer Reaktions-Clip als Einstieg; maximal eine kurze Textzeile.',imagePrompt:`Create a realistic 9:16 smartphone-style TikTok Shop opening visual for the exact product shown in the supplied reference image. Preserve the product design, color, proportions and details exactly. Natural handheld framing, authentic everyday environment, clear negative space for one short German hook. No invented logos, no fake claims, no price text.`},
-  {role:'2 · Produkt / belegbare Information',headline:`Was du bei ${title} prüfen solltest`,body:facts,visualNote:'Originalprodukt groß und unverändert zeigen; nur verifizierte Eigenschaften als Text einblenden.',imagePrompt:`Create a clean 9:16 product-detail visual using the supplied original product photo as the identity reference. Keep the product unchanged and photorealistic. Show useful close-up framing and a simple uncluttered background. Do not add features, accessories, labels or specifications that are not visible or supplied.`},
-  {role:'3 · BOFU / Kaufentscheidung',headline:'Passt das zu deinem Bedarf?',body:`${priceText} ${sourceText} Vor dem Kauf Varianten, Lieferumfang und Rückgabebedingungen prüfen.`,visualNote:'Ruhiger Abschluss mit Produktaufnahme und klarer Aufforderung, aktuelle Details beim Händler zu prüfen.',imagePrompt:`Create a minimal 9:16 final TikTok product frame using the exact supplied product reference. Product remains unchanged, centered and clearly visible, authentic smartphone photo aesthetic, clean space for a short German call to action. No fabricated discount, price, rating or urgency.`}
+  {role:'1 · Hook / Scroll-Stopper',headline:creative.hook,body:'Wisch weiter – im nächsten Bild siehst du die relevanten Produktdetails.',visualNote:'Authentischer iPhone-POV-/Reaction-Einstieg. Das Originalprodukt muss groß und unverändert erkennbar sein.',imagePrompt:'Strict image-to-image reference edit. Preserve the exact product identity, construction, colors, logos, dimensions and visible details. Candid iPhone 12 photo, 8:9, no text, no invented parts.'},
+  {role:'2 · Produkt / Nutzen',headline:'Darauf kommt es bei '+title+' an',body:creative.bridge+' '+(verifiedDescription?facts:'Keine technischen Eigenschaften als gesichert darstellen; sichtbare Details und Lieferumfang prüfen.'),visualNote:'Alltagssituation passend zur Produktkategorie; nur Details zeigen, die in der Referenz tatsächlich vorhanden sind. Keine automatisch platzierten Pfeile.',imagePrompt:'Strict image-to-image reference edit. Show the exact product in a plausible everyday context without changing its physical details or inventing features.'},
+  {role:'3 · BOFU / Kommentar-CTA',headline:creative.question,body:priceText+' '+sourceText+' '+creative.cta,visualNote:'Klare Abschlussaufnahme des Originalprodukts. Aktuellen Preis nur verwenden, wenn er nachweislich geprüft wurde.',imagePrompt:'Strict image-to-image reference edit. Keep exact product unchanged, authentic smartphone photo, clean space for short CTA. No fabricated price, discount or specifications.'}
  ];
+ setStep(2,48) ];
  setStep(2,48);await new Promise(r=>setTimeout(r,100));
  const videoScript=`Du überlegst, dir ${title} zu holen? Schau dir zuerst die Details an. ${verifiedDescription?facts:'Prüfe die tatsächlichen Eigenschaften und den Lieferumfang direkt beim Händler.'} Vergleiche Varianten und aktuelle Konditionen, bevor du entscheidest.`;
  const videoScenes=[
