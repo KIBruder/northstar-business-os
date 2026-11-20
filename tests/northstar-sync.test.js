@@ -84,3 +84,15 @@ test('First owner registration returns a signed session without echoing the pass
  assert.equal(payload.expiresIn,604800);
  assert.equal(JSON.stringify(payload).includes('a-very-long-test-password'),false);
 });
+
+test('D1 sync API lists only the authenticated owner workspaces when no workspace ID is supplied',async()=>{
+ const db=fakeDb(),token=await sessionToken('owner-list');
+ const request=new Request('https://northstar-image-generator.kibruder.workers.dev/api/sync',{method:'GET',headers:{Origin:ORIGIN,Authorization:'Bearer '+token}});
+ const response=await worker.fetch(request,{ALLOWED_ORIGIN:ORIGIN,db,NORTHSTAR_AUTH_SECRET:SECRET});
+ assert.equal(response.status,200);
+ const payload=await response.json();
+ assert.equal(payload.workspaceId,null);
+ assert.deepEqual(payload.stores.workspaces,[]);
+ assert.equal(db.calls.length,1);
+ assert.ok(db.calls[0].includes('owner_sub'));
+});
