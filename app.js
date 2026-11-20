@@ -178,7 +178,7 @@ function contentDetail(post,product){
    <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
    <div class="media-connection-grid"><label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label><label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label></div>
    <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 KI-Slides generieren</button></div>
-   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Für jede Slide wird ein Originalfoto verwendet; Text wird separat und lesbar eingeblendet.</div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Bis zu 8 Referenzen werden gespeichert; pro Slide wird genau eine Referenz verwendet, damit unterschiedliche Ansichten nicht vermischt werden.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
@@ -240,7 +240,7 @@ function buildProductCreative(product){
  const facts=usableDescription?description.slice(0,420):'';
  let category='general',hook='POV: Dieses Produkt ist dir aufgefallen?',bridge='Schau dir Verarbeitung, Details und Lieferumfang genauer an. →',question='Wofür würdest du es nutzen?',scene='A believable everyday situation relevant to this exact product category.';
  if(/jacke|fleece|mantel|hoodie|parka|weste|coat|jacket/.test(lower)){
-  category='apparel';hook='POV: Du suchst eine Jacke für den Alltag?';bridge='Achte auf Futter, Taschen, Verschlüsse und Passform. →';question='Würdest du diese Jacke im Alltag tragen?';scene='A casual real-life clothing moment: the exact jacket is worn or held naturally, with its original silhouette and visible construction clearly shown.';
+  category='apparel';hook='POV: Du suchst eine Jacke für den Alltag?';bridge='Achte auf Futter, Taschen, Verschlüsse und Passform. →';question='Würdest du diese Jacke im Alltag tragen?';scene='A casual real-life clothing moment with the exact jacket laid out or held naturally; do not put it on a body or stretch the fabric, and keep its original silhouette and construction clearly shown.';
  }else if(/bohrer|schrauber|werkzeug|säge|fräse|zange|schleifer|tool|drill/.test(lower)){
   category='tools';hook='POV: Das nächste Projekt wartet schon?';bridge='Prüfe Handhabung, Anschlüsse und den tatsächlichen Lieferumfang. →';question='Für welches Projekt würdest du es einsetzen?';scene='A believable home workshop or DIY setting, with the exact tool clearly visible and no invented accessories.';
  }else if(/kopfhörer|headset|lautsprecher|mikrofon|speaker|earbuds/.test(lower)){
@@ -269,7 +269,7 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
    if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
    else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
    ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
-   const headline=[creative.hook,creative.bridge,creative.question][index];
+   const headline=[creative.hook,'Bei '+creative.name+' auf diese Details achten',creative.question][index];
    const priceLine=verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · '+creative.cta:creative.cta;
    const body=[ 'Wisch weiter – der Blick auf die Details lohnt sich. →', creative.bridge, priceLine ][index];
    const drawText=(text,x,y,font)=>{
@@ -292,11 +292,7 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
    headlineLines.forEach(line=>{drawText(line,62,y,headlineFont);y+=57;});
    const bodyLines=wrap(body,900,bodyFont,2);y+=14;
    bodyLines.forEach(line=>{drawText(line,62,y,bodyFont);y+=40;});
-   if(index===2){
-    const q=wrap(creative.question,900,'700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
-    let qy=Math.min(1080,y+16);q.forEach(line=>{drawText(line,62,qy,'700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif');qy+=42;});
-   }
-   resolve(canvas.toDataURL('image/png'));
+      resolve(canvas.toDataURL('image/png'));
   };img.onerror=()=>reject(new Error('KI-Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
  });
 }
