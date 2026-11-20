@@ -360,7 +360,7 @@ async function generateSlideImages(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
  const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
- const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const endpoint=normalizeMediaEndpoint(localStorage.getItem('northstar_media_endpoint')||'');
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
  if(!endpoint||!token){toast('Die gespeicherte Cloudflare-Worker-Verbindung fehlt. Bitte Verbindung in den Einstellungen erneut hinterlegen.');return;}
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
