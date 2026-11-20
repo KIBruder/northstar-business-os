@@ -13,7 +13,7 @@ let pendingScreenshotImages = [];
 let ocrWorkerPromise = null;
 let generatedScreenshotOcrText = '';
 
-let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
+let state = { workspaceId: null, workspaces: [], products: [], posts: [], activities: [], agentTasks: [], financeTransactions: [], settings: [], selectedProductId: null, selectedPostId: null, productSearch: '' };
 
 const $ = (s, root=document) => root.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -437,7 +437,83 @@ const simplePages = {
  reports:['Managementberichte','MANAGEMENT & REPORTING','Tägliche und wöchentliche Berichte über Geschäftsbereiche, Risiken und Entscheidungen.','Berichte werden erst aussagekräftig, sobald echte Geschäftsdaten vorliegen.'],
  settings:['Einstellungen','SYSTEMKONFIGURATION','Arbeitsbereiche, lokale Datenhaltung, Export und Systempräferenzen.','Backups und Datenexport bleiben unter deiner Kontrolle.']
 };
+
+const agentRoles=[
+ ['orchestrator','Haupt-KI / Orchestrierung'],
+ ['product','Produkt-Agent'],
+ ['research','Recherche-Agent'],
+ ['content','Content-Agent'],
+ ['media','Media-Agent'],
+ ['quality','Qualitäts-Agent'],
+ ['analytics','Analyse-Agent'],
+ ['finance','Finanz-Agent']
+];
+function financeConfig(){
+ return state.settings.find(x=>x.id==='finance-'+state.workspaceId)||{id:'finance-'+state.workspaceId,workspaceId:state.workspaceId,fundRate:0};
+}
+function financeTotals(){
+ const rows=state.financeTransactions.filter(x=>x.workspaceId===state.workspaceId);
+ const income=rows.filter(x=>x.type==='income'&&x.confirmed).reduce((a,x)=>a+Number(x.amount||0),0);
+ const expenses=rows.filter(x=>x.type==='expense'&&x.confirmed).reduce((a,x)=>a+Number(x.amount||0),0);
+ const fund=rows.filter(x=>x.type==='fund_contribution').reduce((a,x)=>a+Number(x.amount||0),0);
+ const rate=Math.max(0,Math.min(100,Number(financeConfig().fundRate)||0));
+ const profit=income-expenses;
+ const target=Math.max(0,profit)*rate/100;
+ return {income,expenses,profit,fund,rate,available:Math.max(0,target-fund)};
+}
+function queueAgentTask({title,description='',role='orchestrator',priority='normal',relatedType='',relatedId=''}){
+ const task={id:crypto.randomUUID(),workspaceId:state.workspaceId,title,description,role,priority,status:'queued',relatedType,relatedId,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:'workflow'};
+ state.agentTasks.unshift(task);db.put('agentTasks',task);log('Agent-Aufgabe eingereiht',title);return task;
+}
+function agentsPage(){
+ header('KI-Agenten','ORCHESTRIERUNG & AUFGABENSTEUERUNG');
+ const tasks=state.agentTasks.filter(x=>x.workspaceId===state.workspaceId);
+ const open=tasks.filter(x=>!['done','cancelled'].includes(x.status));
+ const running=tasks.filter(x=>x.status==='in_progress');
+ return `<div class="page-toolbar"><div><h2>Agenten-Leitstand</h2><p>Aufgaben werden Rollen zugeordnet und durch Freigabe- und Statusschritte geführt.</p></div><span class="status-tag">Orchestrierung v1 · lokal</span></div>
+ <div class="metric-grid">${card('Offene Aufgaben',open.length,'Warteschlange','⌘')}${card('In Bearbeitung',running.length,'manuell gestartet','↻')}${card('Abgeschlossen',tasks.filter(x=>x.status==='done').length,'protokolliert','✓')}${card('Agentenrollen',agentRoles.length,'definierte Zuständigkeiten','◎')}</div>
+ <section class="panel"><div class="panel-head"><div><h3>Neue Aufgabe</h3><p>Auftrag an eine Agentenrolle geben.</p></div></div>
+ <form id="agentTaskForm" class="data-form"><label>Aufgabe *<input name="title" required maxlength="160" placeholder="z. B. Produktdaten und Händlerquelle prüfen"></label><label>Beschreibung<textarea name="description" rows="2" maxlength="1200" placeholder="Erwartetes Ergebnis und Prüfkriterien"></textarea></label><div class="form-grid"><label>Zuständiger Agent<select name="role">${agentRoles.map(x=>`<option value="${x[0]}">${esc(x[1])}</option>`).join('')}</select></label><label>Priorität<select name="priority"><option value="normal">Normal</option><option value="high">Hoch</option><option value="urgent">Dringend</option></select></label></div><button class="button button-primary" type="submit">Aufgabe einreihen</button></form></section>
+ <section class="panel"><div class="panel-head"><div><h3>Aufgabenwarteschlange</h3><p>${tasks.length} gespeicherte Aufgaben in diesem Arbeitsbereich.</p></div></div>
+ ${tasks.length?`<div class="agent-task-list">${tasks.map(t=>`<article class="agent-task"><div><strong>${esc(t.title)}</strong><p>${esc(t.description||'Keine Zusatzbeschreibung')}</p><small>${esc(agentRoles.find(x=>x[0]===t.role)?.[1]||t.role)} · ${new Date(t.createdAt).toLocaleString('de-DE')} · ${esc(t.priority)}</small></div><div class="agent-task-controls"><span class="status-tag">${esc(t.status)}</span><select data-task-status="${t.id}" aria-label="Aufgabenstatus"><option value="queued" ${t.status==='queued'?'selected':''}>Wartend</option><option value="in_progress" ${t.status==='in_progress'?'selected':''}>In Bearbeitung</option><option value="review" ${t.status==='review'?'selected':''}>Prüfung</option><option value="done" ${t.status==='done'?'selected':''}>Abgeschlossen</option><option value="cancelled" ${t.status==='cancelled'?'selected':''}>Abgebrochen</option></select></div></article>`).join('')}</div>`:empty('Noch keine Aufgaben','Neue Produkte und Content-Projekte können automatisch Aufgaben erzeugen.')}</section>
+ <div class="notice"><strong>Transparenter Status</strong><span>Diese Stufe verwaltet Rollen, Aufgaben und Übergaben. Die Rollen sind noch keine autonom laufenden KI-Modelle. Externe Modellaufrufe, Zeitpläne und Hintergrundausführung werden erst mit gesicherter Backend-Orchestrierung aktiviert.</span></div>`;
+}
+function financePage(){
+ header('Finanzen','EINNAHMEN · KOSTEN · KI-FONDS');
+ const t=financeTotals(),rows=state.financeTransactions.filter(x=>x.workspaceId===state.workspaceId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+ return `<div class="page-toolbar"><div><h2>Finanzleitstand</h2><p>Nur bestätigte Buchungen zählen zu Gewinn und Fonds.</p></div><span class="status-tag">Ledger · lokal</span></div>
+ <div class="metric-grid">${card('Bestätigte Einnahmen',money(t.income),'Affiliate-Provisionen usw.','€')}${card('Bestätigte Kosten',money(t.expenses),'erfasste Ausgaben','−')}${card('Nettosaldo',money(t.profit),'Einnahmen minus Kosten','∑')}${card('KI-Fonds',money(t.fund),'tatsächlich gebuchte Beiträge','✦')}</div>
+ <section class="panel"><div class="panel-head"><div><h3>KI-Fonds-Regel</h3><p>Fondsanteil aus bestätigtem positivem Nettosaldo.</p></div></div><div class="form-grid"><label>Fondsanteil in Prozent<input id="fundRate" type="number" min="0" max="100" step="0.5" value="${t.rate}"></label><div class="detail-block"><span>Derzeit zusätzlich zuweisbar</span><strong>${money(t.available)}</strong></div></div><p class="form-hint">Standard ist 0 %. Du legst die Quote selbst fest. Zuweisungen werden erst nach deiner Aktion als eigene Fondsbuchung gespeichert. Keine automatische Abbuchung oder Zahlung.</p><div class="detail-actions"><button class="button button-secondary" id="saveFundRate">Fondsquote speichern</button><button class="button button-primary" id="allocateFund" ${t.available<=0?'disabled':''}>Verfügbaren Fondsanteil buchen</button></div></section>
+ <section class="panel"><div class="panel-head"><div><h3>Buchung erfassen</h3><p>Einnahmen und Kosten manuell dokumentieren.</p></div></div><form id="financeEntryForm" class="data-form"><div class="form-grid"><label>Typ<select name="type"><option value="income">Einnahme</option><option value="expense">Kosten</option></select></label><label>Betrag in EUR<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00"></label></div><label>Quelle / Kategorie<input name="source" required maxlength="120" placeholder="z. B. Amazon PartnerNet Provision"></label><label>Beleg / Referenz (optional)<input name="evidence" maxlength="300" placeholder="Abrechnungs-ID, Exportname oder Notiz"></label><label class="inline-check"><input type="checkbox" name="confirmed"> Buchung ist durch Abrechnung oder Beleg bestätigt</label><button class="button button-primary" type="submit">Buchung speichern</button></form></section>
+ <section class="panel"><div class="panel-head"><div><h3>Buchungsjournal</h3><p>${rows.length} Einträge · ausstehende Buchungen zählen nicht zum Nettosaldo.</p></div></div>${rows.length?`<div class="agent-task-list">${rows.map(x=>`<article class="agent-task"><div><strong>${x.type==='income'?'Einnahme':x.type==='expense'?'Kosten':'KI-Fonds-Zuweisung'} · ${money(x.amount)}</strong><p>${esc(x.source||'Fondsbeitrag')} · ${esc(x.evidence||'Kein Belegverweis')}</p><small>${new Date(x.createdAt).toLocaleString('de-DE')} · ${x.confirmed?'Bestätigt':'Ausstehend'}</small></div><span class="status-tag">${x.type==='fund_contribution'?'Gebucht':x.confirmed?'Bestätigt':'Offen'}</span></article>`).join('')}</div>`:empty('Noch keine Finanzbuchungen','Erfasse bestätigte Provisionen und tatsächlich angefallene Kosten.')}</section>
+ <div class="notice"><strong>Finanzkontrolle</strong><span>Northstar liest noch keine Affiliate-Konten automatisch aus. Bis eine offizielle Schnittstelle eingerichtet ist, müssen Provisionen anhand deiner echten Abrechnungen eingetragen werden. Der Fonds ist eine interne Rücklage, kein Bankkonto.</span></div>`;
+}
+async function saveAgentTask(event){
+ event.preventDefault();const d=new FormData(event.currentTarget),title=String(d.get('title')||'').trim();if(!title)return;
+ const task=queueAgentTask({title,description:String(d.get('description')||'').trim(),role:String(d.get('role')||'orchestrator'),priority:String(d.get('priority')||'normal')});
+ await db.put('agentTasks',task);renderPage();toast('Agent-Aufgabe eingereiht.');
+}
+async function updateAgentTask(id,status){
+ const t=state.agentTasks.find(x=>x.id===id&&x.workspaceId===state.workspaceId);if(!t)return;
+ t.status=status;t.updatedAt=new Date().toISOString();await db.put('agentTasks',t);log('Agent-Aufgabenstatus geändert',t.title+' · '+status);renderPage();
+}
+async function saveFinanceEntry(event){
+ event.preventDefault();const d=new FormData(event.currentTarget),amount=Number(d.get('amount'));if(!Number.isFinite(amount)||amount<=0){toast('Bitte einen gültigen Betrag eingeben.');return;}
+ const type=String(d.get('type'));const row={id:crypto.randomUUID(),workspaceId:state.workspaceId,type,amount:Number(amount.toFixed(2)),source:String(d.get('source')||'').trim(),evidence:String(d.get('evidence')||'').trim(),confirmed:d.get('confirmed')==='on',createdAt:new Date().toISOString()};
+ state.financeTransactions.unshift(row);await db.put('financeTransactions',row);log('Finanzbuchung erfasst',(type==='income'?'Einnahme':'Kosten')+' · '+money(amount));renderPage();toast('Finanzbuchung gespeichert.');
+}
+async function saveFundRate(){
+ const input=$('#fundRate'),rate=Number(input?.value);if(!Number.isFinite(rate)||rate<0||rate>100){toast('Fondsquote muss zwischen 0 und 100 % liegen.');return;}
+ const cfg={...financeConfig(),fundRate:rate,updatedAt:new Date().toISOString()};state.settings=state.settings.filter(x=>x.id!==cfg.id);state.settings.push(cfg);await db.put('settings',cfg);log('KI-Fondsquote geändert',rate+' %');renderPage();toast('Fondsquote gespeichert.');
+}
+async function allocateFund(){
+ const t=financeTotals();if(t.available<=0){toast('Kein verfügbarer bestätigter Fondsanteil.');return;}
+ const row={id:crypto.randomUUID(),workspaceId:state.workspaceId,type:'fund_contribution',amount:Number(t.available.toFixed(2)),source:'Interne KI-Fonds-Zuweisung',evidence:'Aus bestätigtem Nettosaldo; Quote '+t.rate+' %',confirmed:true,createdAt:new Date().toISOString()};
+ state.financeTransactions.unshift(row);await db.put('financeTransactions',row);log('KI-Fonds dotiert',money(row.amount));renderPage();toast('Fondsbeitrag gebucht.');
+}
+
 function simplePage(id){
+ if(id==='agents')return agentsPage();if(id==='finance')return financePage();
  const [title,eyebrow,desc,note]=simplePages[id]; header(title,eyebrow);
  return `<div class="hero-panel"><div class="hero-icon">${sections.find(s=>s[0]===id)?.[2]||'•'}</div><div><h2>${title}</h2><p>${desc}</p></div></div><div class="panel"><h3>Modulstatus</h3><p class="muted">Grundstruktur angelegt · Fachfunktionen werden in den nächsten Entwicklungsstufen integriert.</p><div class="progress-track"><span style="width:12%"></span></div><small class="muted">Grundgerüst: Navigation und lokale Datenbasis vorhanden</small></div><div class="notice"><strong>Umsetzungsregel</strong><span>${note}</span></div>`;
 }
@@ -470,6 +546,9 @@ function renderPage(){
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
  if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
+ $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
+ document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
+ $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFundRate')?.addEventListener('click',saveFundRate);$('#allocateFund')?.addEventListener('click',allocateFund);
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
@@ -758,7 +837,7 @@ async function saveProduct(event){
   updatedAt:new Date().toISOString()
  };
  if(existing){state.products=state.products.map(x=>x.id===id?p:x);await db.put('products',p);log('Produkt bearbeitet',p.name);}
- else{state.products.push(p);await db.put('products',p);log('Produkt erfasst',p.name);}
+ else{state.products.push(p);await db.put('products',p);log('Produkt erfasst',p.name);queueAgentTask({title:'Produktdaten und Quellen prüfen: '+p.name,description:'Produktangaben, sichtbare Merkmale, Händlerlink und Preisbeleg prüfen. Keine Eigenschaften ohne Nachweis freigeben.',role:'product',priority:'high',relatedType:'product',relatedId:p.id});}
  state.selectedProductId=p.id;pendingScreenshotDataUrl='';clearScreenshotImport();hideProductForm();renderPage();toast(existing?'Produkt aktualisiert.':'Produkt lokal gespeichert.');
 }
 async function runLocalProductAnalysis(id){
@@ -793,6 +872,7 @@ async function createContentFromProduct(id){
  const p=state.products.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!p)return;
  const post={id:crypto.randomUUID(),workspaceId:state.workspaceId,productId:p.id,title:p.name,channel:'TikTok',strategy:'BOFU',status:'Entwurf',hooks:p.analysis?.hooks||[],angles:p.analysis?.angles||[],createdAt:new Date().toISOString()};
  state.posts.push(post);await db.put('posts',post);
+ queueAgentTask({title:'BOFU-Content vorbereiten: '+p.name,description:'Auf Basis bestätigter Produktdaten eine natürliche 3-Slide-Dramaturgie und passende Medienplanung erstellen.',role:'content',priority:'normal',relatedType:'post',relatedId:post.id});
  p.status='Content geplant';p.updatedAt=new Date().toISOString();await db.put('products',p);
  log('Content-Projekt aus Produkt erstellt',p.name);state.selectedPostId=post.id;
  go('content');toast('Content-Entwurf mit Produktverknüpfung erstellt.');
@@ -815,7 +895,7 @@ function renderWorkspaceSelect(){
 }
 async function init(){
  await db.init();
- for(const store of ['workspaces','products','posts','activities']) state[store]=await db.all(store);
+ for(const store of ['workspaces','products','posts','activities','agentTasks','financeTransactions','settings']) state[store]=await db.all(store);
  if(!state.workspaces.length){const w={id:crypto.randomUUID(),name:'Affiliate Business',description:'Affiliate, Content und Monetarisierung',createdAt:new Date().toISOString()};state.workspaces=[w];await db.put('workspaces',w);}
  state.workspaceId=state.workspaces[0].id;
  renderWorkspaceSelect(); renderNav(); renderPage();
