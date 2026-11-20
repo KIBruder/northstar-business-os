@@ -92,7 +92,8 @@ async function syncApi(request, env, cors) {
  let subject;
  try { subject = await verifyAccessJwt(request,env); }
  catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.'},401,cors); }
- if (!env.DB) return json({error:'D1-Binding DB ist nicht konfiguriert.'},503,cors);
+ const db = env.DB || env.db;
+ if (!db) return json({error:'D1-Binding DB/db ist nicht konfiguriert.'},503,cors);
  try {
   if (request.method === 'GET') {
    const workspaceId = new URL(request.url).searchParams.get('workspaceId');
@@ -100,8 +101,8 @@ async function syncApi(request, env, cors) {
    const result={};
    for (const [store, table] of Object.entries(SYNC_TABLES)) {
     const rows = store==='workspaces'
-     ? await env.DB.prepare('SELECT id, payload_json, updated_at FROM workspaces WHERE owner_sub = ? AND id = ? AND deleted_at IS NULL LIMIT 1').bind(subject,workspaceId).all()
-     : await env.DB.prepare('SELECT id, payload_json, updated_at FROM '+table+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
+     ? await db.prepare('SELECT id, payload_json, updated_at FROM workspaces WHERE owner_sub = ? AND id = ? AND deleted_at IS NULL LIMIT 1').bind(subject,workspaceId).all()
+     : await db.prepare('SELECT id, payload_json, updated_at FROM '+table+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
     result[store]=rows.results.map(row=>({id:row.id,...JSON.parse(row.payload_json),updatedAt:row.updated_at}));
    }
    return json({workspaceId,stores:result},200,cors);
@@ -121,11 +122,11 @@ async function syncApi(request, env, cors) {
    if (store==='workspaces' && id!==workspaceId) return json({error:'Workspace-ID muss der Datensatz-ID entsprechen.'},400,cors);
    const payload=JSON.stringify(item);
    if (payload.length>1_000_000) return json({error:'Datensatz überschreitet 1 MB.'},413,cors);
-   const exists=await env.DB.prepare('SELECT id FROM workspaces WHERE owner_sub=? AND id=? AND deleted_at IS NULL').bind(subject,workspaceId).first();
+   const exists=await db.prepare('SELECT id FROM workspaces WHERE owner_sub=? AND id=? AND deleted_at IS NULL').bind(subject,workspaceId).first();
    if (store!=='workspaces' && !exists) return json({error:'Arbeitsbereich nicht gefunden oder kein Zugriff.'},403,cors);
-   statements.push(env.DB.prepare('INSERT INTO '+table+' (id,owner_sub,workspace_id,payload_json,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,NULL) ON CONFLICT(owner_sub,id) DO UPDATE SET workspace_id=excluded.workspace_id,payload_json=excluded.payload_json,updated_at=excluded.updated_at,deleted_at=NULL WHERE '+table+'.updated_at <= excluded.updated_at').bind(id,subject,workspaceId,payload, String(item.createdAt||now),String(item.updatedAt||now)));
+   statements.push(db.prepare('INSERT INTO '+table+' (id,owner_sub,workspace_id,payload_json,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,NULL) ON CONFLICT(owner_sub,id) DO UPDATE SET workspace_id=excluded.workspace_id,payload_json=excluded.payload_json,updated_at=excluded.updated_at,deleted_at=NULL WHERE '+table+'.updated_at <= excluded.updated_at').bind(id,subject,workspaceId,payload, String(item.createdAt||now),String(item.updatedAt||now)));
   }
-  if (statements.length) await env.DB.batch(statements);
+  if (statements.length) await db.batch(statements);
   return json({ok:true,saved:statements.length,ownerScoped:true},200,cors);
  } catch(error) {
   return json({error:'Synchronisierung fehlgeschlagen.',detail:String(error.message||error)},500,cors);
