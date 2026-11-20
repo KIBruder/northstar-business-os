@@ -97,7 +97,7 @@ function productsPage(){
      <label>Produktlink<input name="url" type="url" placeholder="https://..."></label>
      <label>Quellenlink für Preis / Eigenschaften<input name="sourceUrl" type="url" placeholder="Herstellerseite oder Händlerquelle"></label>
      <label>Produktbeschreibung<textarea name="description" rows="3" maxlength="2000" placeholder="Bekannte Eigenschaften und Hinweise"></textarea></label>
-     <label>Produktbild oder Screenshot<input name="productImage" type="file" accept="image/*"></label>
+     <label>Produktbilder / Referenzen (bis zu 8)<input name="productImage" type="file" accept="image/*" multiple></label><p class="form-hint">Bis zu 8 Ansichten auswählen: Gesamtansicht, Details, Rückseite, Etikett usw. Neue Bilder werden zu den vorhandenen Referenzen ergänzt.</p>
      <div id="productImagePreview" class="product-image-preview" hidden></div>
      <label>Bild-URL (falls aus einer zugänglichen Produktseite ausgelesen)<input name="imageUrl" type="url" placeholder="https://..."></label>
      <div class="form-actions"><button class="button button-secondary" id="cancelProductForm" type="button">Abbrechen</button><button class="button button-primary" type="submit" id="saveProductButton">Produkt lokal speichern</button></div>
@@ -181,7 +181,7 @@ function contentDetail(post,product){
    </div>
    <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
    <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
-   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert.</div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktreferenzen möglich; FLUX.2 Klein verarbeitet maximal 4 Referenzbilder pro Generierung.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
@@ -191,7 +191,30 @@ function contentDetail(post,product){
 function generatedSlidesMarkup(draft){
  const slides=draft.generatedSlides||[];
  if(!slides.length)return '';
- return '<div class="generated-slide-grid">'+slides.map((item,i)=>'<article class="generated-slide-card"><img src="'+item.dataUrl+'" alt="Generierter Slide '+(i+1)+'"><strong>Slide '+(i+1)+'</strong><a class="button button-secondary" href="'+item.dataUrl+'" download="northstar-slide-'+(i+1)+'.png">Bild speichern</a></article>').join('')+'</div>';
+ return '<div class="detail-actions"><button class="button button-primary" id="saveAllSlidesToPhotos" type="button">Alle 3 Bilder in Fotos sichern</button></div><p class="form-hint">Auf dem iPhone im Teilen-Menü „Bild sichern“ auswählen. Northstar kann nicht ohne Bestätigung direkt auf deine Fotos zugreifen.</p><div class="generated-slide-grid">'+slides.map((item,i)=>'<article class="generated-slide-card"><img src="'+item.dataUrl+'" alt="Generierter Slide '+(i+1)+'"><strong>Slide '+(i+1)+'</strong><button class="button button-secondary" type="button" data-save-slide="'+i+'">In Fotos sichern</button><a class="button button-secondary" href="'+item.dataUrl+'" download="northstar-slide-'+(i+1)+'.png">Datei laden</a></article>').join('')+'</div>';
+}
+function dataUrlToImageFile(dataUrl,index){
+ const match=String(dataUrl||'').match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i);
+ if(!match)throw new Error('Bilddatei ist ungültig.');
+ const binary=atob(match[2]),bytes=new Uint8Array(binary.length);
+ for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ return new File([bytes],'northstar-slide-'+(index+1)+'.png',{type:match[1]});
+}
+async function shareGeneratedSlides(postId,index=null){
+ const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
+ const slides=post?.draft?.generatedSlides||[];
+ const chosen=index===null?slides.map((item,i)=>({item,i})):slides[index]?[{item:slides[index],i:index}]:[];
+ if(!chosen.length){toast('Keine generierten Bilder vorhanden.');return;}
+ try{
+  const files=chosen.map(({item,i})=>dataUrlToImageFile(item.dataUrl,i));
+  if(navigator.share&&(!navigator.canShare||navigator.canShare({files}))){
+   await navigator.share({files,title:chosen.length===1?'Northstar Slide':'Northstar BOFU Slides'});
+   toast('Teilen-Menü geöffnet. Wähle „Bild sichern“, um die Bilder in Fotos abzulegen.');
+  }else{
+   for(const file of files){const url=URL.createObjectURL(file),link=document.createElement('a');link.href=url;link.download=file.name;link.click();URL.revokeObjectURL(url);}
+   toast('Bilddatei(en) heruntergeladen. Auf dem iPhone über Teilen > Bild sichern ablegen.');
+  }
+ }catch(error){if(error.name!=='AbortError')toast('Teilen nicht möglich: '+(error.message||'Bitte Datei laden verwenden.'));}
 }
 function saveMediaSettings(){
  const endpoint=$('#mediaEndpoint')?.value.trim()||'',token=$('#mediaToken')?.value.trim()||'';
@@ -241,10 +264,10 @@ async function generateSlideImages(postId){
  const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
  if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
- const referenceSource=[product.imageDataUrl,...(product.screenshotDataUrls||[])].find(x=>typeof x==='string'&&x.startsWith('data:image/'));
- if(!referenceSource){toast('Kein gespeichertes Produktbild gefunden.');return;}
- let referenceImage;
- try{referenceImage=await prepareFluxReferenceImage(referenceSource);}catch(error){toast(error.message||'Referenzbild konnte nicht vorbereitet werden.');return;}
+ const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
+ if(!referenceSources.length){toast('Kein gespeichertes Produktbild gefunden.');return;}
+ let referenceImages;
+ try{referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));}catch(error){toast(error.message||'Referenzbilder konnten nicht vorbereitet werden.');return;}
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
  if(button){button.disabled=true;button.textContent='Generierung läuft …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
@@ -252,8 +275,10 @@ async function generateSlideImages(postId){
   for(let i=0;i<post.draft.slides.length;i++){
    if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
    const slide=post.draft.slides[i];
-   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact product. Preserve its original shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:[referenceImage]})});
+   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact same product. Use the references together to preserve the exact product identity, shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
+   const start=(i*2)%referenceImages.length;
+   const selectedReferences=referenceImages.length<=4?referenceImages:Array.from({length:4},(_,offset)=>referenceImages[(start+offset)%referenceImages.length]);
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:selectedReferences})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
@@ -374,6 +399,8 @@ function renderPage(){
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
  $('#saveMediaSettings')?.addEventListener('click',saveMediaSettings);
  $('#generateSlideImages')?.addEventListener('click',e=>generateSlideImages(e.currentTarget.dataset.id));
+ $('#saveAllSlidesToPhotos')?.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId));
+ document.querySelectorAll('[data-save-slide]').forEach(button=>button.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId,Number(button.dataset.saveSlide))));
 }
 function classifyProductUrl(raw){
  let u;
@@ -568,11 +595,14 @@ function readFileAsDataUrl(file){
  return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||''));reader.onerror=()=>reject(reader.error||new Error('Datei konnte nicht gelesen werden.'));reader.readAsDataURL(file);});
 }
 async function previewProductImage(event){
- const file=event.target.files?.[0],box=$('#productImagePreview');if(!box)return;
- if(!file){box.hidden=true;box.innerHTML='';return;}
- if(!file.type.startsWith('image/')){toast('Bitte eine Bilddatei auswählen.');event.target.value='';return;}
- if(file.size>5*1024*1024){toast('Bild ist zu groß. Maximal 5 MB.');event.target.value='';return;}
- try{const url=await readFileAsDataUrl(file);box.hidden=false;box.innerHTML=`<img src="${url}" alt="Bildvorschau"><span>${esc(file.name)} · ${(file.size/1024).toFixed(0)} KB</span>`;}catch{toast('Bildvorschau fehlgeschlagen.');}
+ const files=Array.from(event.target.files||[]),box=$('#productImagePreview');if(!box)return;
+ if(!files.length){box.hidden=true;box.innerHTML='';return;}
+ if(files.length>8){toast('Maximal 8 Produktbilder gleichzeitig.');event.target.value='';return;}
+ const invalid=files.find(file=>!file.type.startsWith('image/')||file.size>5*1024*1024);
+ if(invalid){toast('Bitte nur Bilddateien bis maximal 5 MB pro Bild auswählen.');event.target.value='';return;}
+ try{const previews=await Promise.all(files.map(async file=>({file,url:await readFileAsDataUrl(file)})));
+ box.hidden=false;box.innerHTML=previews.map(({file,url})=>'<div class="product-reference-preview"><img src="'+url+'" alt="Produktreferenz"><span>'+esc(file.name)+' · '+(file.size/1024).toFixed(0)+' KB</span></div>').join('');
+ }catch{toast('Bildvorschau fehlgeschlagen.');}
 }
 function extractProductMetadata(html,baseUrl){
  const doc=new DOMParser().parseFromString(html,'text/html');
@@ -626,15 +656,21 @@ async function saveProduct(event){
  if(rawPrice){price=Number(rawPrice);if(!Number.isFinite(price)||price<0){toast('Bitte einen gültigen Preis eingeben.');return;}}
  const existing=id?state.products.find(x=>x.id===id):null;
  let imageDataUrl=existing?.imageDataUrl||'';
- const imageFile=form.elements.productImage.files?.[0];
- if(imageFile){if(!imageFile.type.startsWith('image/')||imageFile.size>5*1024*1024){toast('Bild muss ein Bildformat sein und darf höchstens 5 MB groß sein.');return;}imageDataUrl=await readFileAsDataUrl(imageFile);}
+ const selectedImageFiles=Array.from(form.elements.productImage.files||[]);
+ if(selectedImageFiles.length>8){toast('Maximal 8 Produktbilder auswählen.');return;}
+ if(selectedImageFiles.some(file=>!file.type.startsWith('image/')||file.size>5*1024*1024)){toast('Jedes Produktbild muss ein Bildformat sein und darf höchstens 5 MB groß sein.');return;}
+ const uploadedImages=await Promise.all(selectedImageFiles.map(readFileAsDataUrl));
+ if(uploadedImages.length&&!imageDataUrl)imageDataUrl=uploadedImages[0];
  if(pendingScreenshotDataUrl)imageDataUrl=pendingScreenshotDataUrl;
+ const previousRefs=Array.isArray(existing?.referenceImagesDataUrls)?existing.referenceImagesDataUrls:[existing?.imageDataUrl,...(existing?.screenshotDataUrls||[])].filter(Boolean);
+ const referenceImagesDataUrls=[...new Set([...previousRefs,...uploadedImages,...pendingScreenshotImages.map(x=>x.dataUrl)])].slice(0,8);
+ if(!imageDataUrl&&referenceImagesDataUrls.length)imageDataUrl=referenceImagesDataUrls[0];
  const p={
   ...(existing||{}),id:id||crypto.randomUUID(),workspaceId:state.workspaceId,name,
   merchant:String(data.get('merchant')||'').trim(),url:String(data.get('url')||'').trim(),
   sourceUrl:String(data.get('sourceUrl')||'').trim(),price,
   description:String(data.get('description')||'').trim(),
-  imageUrl:String(data.get('imageUrl')||'').trim(),imageDataUrl,
+  imageUrl:String(data.get('imageUrl')||'').trim(),imageDataUrl,referenceImagesDataUrls,
   screenshotDataUrls:pendingScreenshotImages.length?pendingScreenshotImages.map(x=>x.dataUrl):(existing?.screenshotDataUrls||[]),
   importPlatform:String(data.get('importPlatform')||existing?.importPlatform||'').trim(),
   importProductId:String(data.get('importProductId')||existing?.importProductId||'').trim(),
