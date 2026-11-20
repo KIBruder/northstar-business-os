@@ -581,24 +581,37 @@ async function syncAllData(){
  const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
  const stores=['workspaces','products','posts','activities','agentTasks','financeTransactions','settings'];
  const local={};for(const store of stores)local[store]=await db.all(store);
- for(const workspace of local.workspaces){
+ const listResponse=await fetch(base+'/api/sync',{headers});
+ const listPayload=await listResponse.json();
+ if(!listResponse.ok)throw new Error(listPayload.error||'Arbeitsbereiche konnten nicht geladen werden.');
+ const workspaceMap=new Map();
+ const stamp=x=>Date.parse(x.updatedAt||x.createdAt||'1970-01-01')||0;
+ for(const item of [...(listPayload.stores?.workspaces||[]),...local.workspaces]){
+  const prior=workspaceMap.get(item.id);if(!prior||stamp(item)>=stamp(prior))workspaceMap.set(item.id,item);
+ }
+ const workspaces=[...workspaceMap.values()];
+ if(!workspaces.length)throw new Error('Kein Arbeitsbereich vorhanden. Bitte zuerst einen Arbeitsbereich anlegen.');
+ for(const item of workspaces)await db.put('workspaces',item);
+ for(let offset=0;offset<workspaces.length;offset+=500){
+  const records=workspaces.slice(offset,offset+500).map(item=>({store:'workspaces',item}));
+  const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records})});
+  const result=await saved.json();if(!saved.ok)throw new Error(result.error||'Arbeitsbereiche konnten nicht gespeichert werden.');
+ }
+ for(const workspace of workspaces){
   const response=await fetch(base+'/api/sync?workspaceId='+encodeURIComponent(workspace.id),{headers});
   const remote=await response.json();if(!response.ok)throw new Error(remote.error||'Cloud-Daten konnten nicht geladen werden.');
-  for(const store of stores){
+  for(const store of stores.slice(1)){
    const remoteRows=remote.stores?.[store]||[];
-   const localRows=store==='workspaces'?[workspace]:local[store].filter(item=>item.workspaceId===workspace.id);
+   const localRows=local[store].filter(item=>item.workspaceId===workspace.id);
    const merged=new Map();
    for(const item of [...remoteRows,...localRows]){
-    const prior=merged.get(item.id);
-    const stamp=x=>Date.parse(x.updatedAt||x.createdAt||'1970-01-01')||0;
-    if(!prior||stamp(item)>=stamp(prior))merged.set(item.id,item);
+    const prior=merged.get(item.id);if(!prior||stamp(item)>=stamp(prior))merged.set(item.id,item);
    }
    const rows=[...merged.values()];
    for(const item of rows)await db.put(store,item);
-   const records=rows.filter(item=>store==='workspaces'||item.workspaceId===workspace.id).map(item=>({store,item}));
-   for(let offset=0;offset<records.length;offset+=500){
-    const batch=records.slice(offset,offset+500);
-    const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records:batch})});
+   for(let offset=0;offset<rows.length;offset+=500){
+    const records=rows.slice(offset,offset+500).map(item=>({store,item}));
+    const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records})});
     const result=await saved.json();if(!saved.ok)throw new Error(result.error||'Cloud-Speicherung fehlgeschlagen.');
    }
   }
@@ -606,7 +619,7 @@ async function syncAllData(){
  for(const store of stores)state[store]=await db.all(store);
  state.workspaceId=state.workspaces[0]?.id||state.workspaceId;
  renderWorkspaceSelect();renderPage();
- return 'Synchronisierung abgeschlossen. '+stores.reduce((sum,store)=>sum+state[store].length,0)+' Datensätze lokal und in D1 abgeglichen.';
+ return 'Synchronisierung abgeschlossen. '+stores.reduce((sum,store)=>sum+state[store].length,0)+' Datensätze in '+workspaces.length+' Arbeitsbereichen abgeglichen.';
 }
 
 function simplePage(id){
