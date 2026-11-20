@@ -223,12 +223,12 @@ function saveMediaSettings(){
 function prepareFluxReferenceImage(dataUrl){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
-   const maxEdge=510,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+   const maxEdge=1024,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
    const width=Math.max(1,Math.round((img.naturalWidth||img.width)*scale)),height=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
    const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas für Referenzbild nicht verfügbar.'));return;}
    ctx.drawImage(img,0,0,width,height);
-   resolve(canvas.toDataURL('image/jpeg',0.84));
+   resolve(canvas.toDataURL('image/jpeg',0.9));
   };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
  });
 }
@@ -258,7 +258,7 @@ function buildProductCreative(product){
  }else if(/küche|kochen|kaffee|pfanne|messer|staubsauger|haushalt/i.test(lower)){
   category='home';hook='Wäre das ein praktisches Upgrade für zuhause?';benefit='Schau dir Form und Handhabung an';question='Würde dir das den Alltag erleichtern?';scenes=['A candid everyday kitchen or home photo featuring the exact product.','A close smartphone photo of the exact product and only accessories shown in the reference.','A natural in-use home scene featuring the same exact product.'];visibleCue='the exact product shape, materials, controls and visible components';
  }
- return {name,category,hook,benefit,question,scenes,facts,visibleCue,cta:verifiedPrice?'Preis: '+money(product.price)+' – würdest du es kaufen?':'Preis beim Händler prüfen – würdest du es kaufen?'};
+ return {name,category,hook,benefit,question,scenes,facts,visibleCue,cta:'Produktdetails beim Händler prüfen'};
 }
 function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creative){
  return new Promise((resolve,reject)=>{
