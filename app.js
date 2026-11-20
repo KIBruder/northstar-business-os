@@ -175,12 +175,7 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
   <section class="media-generation-panel">
    <div class="panel-head"><div><h3>Originalgetreue Bild-Slides</h3><p>Drei saubere 8:9-Slides direkt aus deinen Produktfotos erstellen.</p></div><span class="status-tag">Originalfoto · Text separat gesetzt</span></div>
-   <div class="media-connection-grid">
-    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label>
-    <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
-   </div>
    <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
-   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt erstellen</button></div>
    <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Für jede Slide wird ein Originalfoto verwendet; Text wird separat und lesbar eingeblendet.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
