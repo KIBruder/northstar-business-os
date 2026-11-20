@@ -65,3 +65,10 @@ test('Auth endpoints fail closed when the signing secret is missing',async()=>{
  const response=await worker.fetch(request,{ALLOWED_ORIGIN:ORIGIN,db:fakeDb()});
  assert.equal(response.status,503);
 });
+
+test('Registration is disabled after the private owner account exists',async()=>{
+ const db={prepare(sql){return {bind(){return this;},async first(){return {count:1};}};}};
+ const request=new Request('https://northstar-image-generator.kibruder.workers.dev/api/auth/register',{method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({email:'second@example.com',password:'a-very-long-test-password'})});
+ const response=await worker.fetch(request,{ALLOWED_ORIGIN:ORIGIN,db,NORTHSTAR_AUTH_SECRET:SECRET});
+ assert.equal(response.status,403);
+});
