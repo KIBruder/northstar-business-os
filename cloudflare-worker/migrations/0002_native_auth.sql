@@ -9,3 +9,11 @@ CREATE TABLE IF NOT EXISTS users (
   disabled_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE);
+
+-- The initial private deployment supports one owner account; this prevents open public signups.
+CREATE TRIGGER IF NOT EXISTS users_single_account
+BEFORE INSERT ON users
+WHEN EXISTS (SELECT 1 FROM users)
+BEGIN
+  SELECT RAISE(ABORT, 'registration closed');
+END;
