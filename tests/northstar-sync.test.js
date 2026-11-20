@@ -72,3 +72,15 @@ test('Registration is disabled after the private owner account exists',async()=>
  const response=await worker.fetch(request,{ALLOWED_ORIGIN:ORIGIN,db,NORTHSTAR_AUTH_SECRET:SECRET});
  assert.equal(response.status,403);
 });
+
+test('First owner registration returns a signed session without echoing the password',async()=>{
+ const db=fakeDb();
+ const request=new Request('https://northstar-image-generator.kibruder.workers.dev/api/auth/register',{method:'POST',headers:{Origin:ORIGIN,'Content-Type':'application/json'},body:JSON.stringify({email:'owner@example.com',password:'a-very-long-test-password'})});
+ const response=await worker.fetch(request,{ALLOWED_ORIGIN:ORIGIN,db,NORTHSTAR_AUTH_SECRET:SECRET});
+ assert.equal(response.status,200);
+ const payload=await response.json();
+ assert.ok(payload.token);
+ assert.equal(payload.user.email,'owner@example.com');
+ assert.equal(payload.expiresIn,604800);
+ assert.equal(JSON.stringify(payload).includes('a-very-long-test-password'),false);
+});
