@@ -24,7 +24,7 @@ export default {
    form.append('width', '1024');
    form.append('height', '1152');
    for (let i = 0; i < images.length; i++) {
-    const match = typeof images[i] === 'string' && images[i].match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+/=]+)$/i);
+    const match = typeof images[i] === 'string' && images[i].match(/^data:image\/(png|jpe?g|webp);base64,([A-Za-z0-9+\/=]+)$/i);
     if (!match) return json({ error: 'Ungültige Bildreferenz '+(i+1)+' (PNG, JPEG oder WebP erwartet).' }, 400, cors);
     const binary = atob(match[2]);
     if (binary.length > 8 * 1024 * 1024) return json({ error: 'Referenzbild '+(i+1)+' zu groß (max. 8 MB).' }, 413, cors);
