@@ -156,12 +156,15 @@ async function authApi(request, env, cors, action) {
   if(password.length<12||password.length>128) return json({error:'Das Passwort muss mindestens 12 und höchstens 128 Zeichen lang sein.'},400,cors);
   let user;
   if(action==='register') {
+   const existing=await db.prepare('SELECT COUNT(*) AS count FROM users').first();
+   if(Number(existing?.count||0)>0)return json({error:'Das private Northstar-Konto ist bereits eingerichtet. Weitere Registrierungen sind deaktiviert.'},403,cors);
    const salt=crypto.getRandomValues(new Uint8Array(16));
    const hash=await hashPassword(password,salt);
    const id=crypto.randomUUID(), now=new Date().toISOString();
    try {
     await db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at,updated_at,disabled_at) VALUES (?,?,?,?,?,?,NULL)').bind(id,email,toBase64Url(salt),toBase64Url(hash),now,now).run();
    } catch(error) {
+    if(/registration closed/i.test(String(error.message||error)))return json({error:'Das private Northstar-Konto ist bereits eingerichtet.'},403,cors);
     if(/unique|constraint/i.test(String(error.message||error)))return json({error:'Für diese E-Mail-Adresse existiert bereits ein Konto.'},409,cors);
     throw error;
    }
