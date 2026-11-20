@@ -1,0 +1,6 @@
+name = "northstar-media-generator"
+main = "src/index.js"
+compatibility_date = "2026-11-20"
+
+[vars]
+ALLOWED_ORIGIN = "https://kibruder.github.io"
