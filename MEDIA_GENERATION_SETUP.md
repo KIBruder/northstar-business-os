@@ -27,7 +27,8 @@
 - Kosten/Neurons hängen vom Modell und der Bildgröße ab. Drei Slides verbrauchen entsprechend mehr Kontingent als ein einzelner Test.
 
 ## Referenzbilder und Grenzen
-- Diese Integration übergibt maximal ein Referenzbild pro Slide.
+- Northstar verwendet pro Slide genau ein Referenzbild: bevorzugt das gespeicherte Haupt-Produktbild, ersatzweise den ersten gespeicherten Screenshot.
+- Das Bild wird im Browser proportional auf maximal 512 × 512 Pixel verkleinert und als JPEG übertragen. Dadurch wird die dokumentierte Cloudflare-Grenze für FLUX.2 Klein 4B eingehalten.
 - Das Modell unterstützt Bildgenerierung und Bildbearbeitung; Produkttreue muss praktisch geprüft werden.
 - KI kann Produktdetails, Logos, Farben und Beschriftungen verändern. Vor Veröffentlichung immer mit dem Original abgleichen.
 - Northstar speichert lokal und veröffentlicht nicht automatisch auf TikTok.
