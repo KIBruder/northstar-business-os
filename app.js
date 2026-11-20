@@ -174,14 +174,14 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
   <section class="media-generation-panel">
-   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">Cloudflare Workers AI · FLUX.2 Klein</span></div>
+   <div class="panel-head"><div><h3>Originalgetreue Bild-Slides</h3><p>Drei saubere 8:9-Slides direkt aus deinen Produktfotos erstellen.</p></div><span class="status-tag">Originalfoto · Text separat gesetzt</span></div>
    <div class="media-connection-grid">
     <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label>
     <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
    </div>
-   <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
-   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
-   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktreferenzen möglich; FLUX.2 Klein verarbeitet maximal 4 Referenzbilder pro Generierung.</div>
+   <p class="form-hint">Die Produktfotos bleiben unverändert. Northstar setzt Überschrift und Kurztext separat darüber – ohne KI-erfundene Logos, Produktdetails oder Bildtexte.</p>
+   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt erstellen</button></div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert. Bis zu 8 Produktfotos möglich. Für jede Slide wird ein Originalfoto verwendet; Text wird separat und lesbar eingeblendet.</div>
    ${generatedSlidesMarkup(draft)}
   </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
@@ -235,63 +235,70 @@ function prepareFluxReferenceImage(dataUrl){
   };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
  });
 }
-function cropImageToEightNinths(dataUrl,slide){
+function createOriginalPhotoSlide(dataUrl,slide,index){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
+   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
    const ratio=8/9,source=img.width/img.height;let sx=0,sy=0,sw=img.width,sh=img.height;
    if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
    else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
-   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
-   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
    ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
-   const gradient=ctx.createLinearGradient(0,620,0,1152);gradient.addColorStop(0,'rgba(5,12,24,0)');gradient.addColorStop(.24,'rgba(5,12,24,.68)');gradient.addColorStop(1,'rgba(5,12,24,.92)');
-   ctx.fillStyle=gradient;ctx.fillRect(0,620,1024,532);
-   const wrap=(text,maxWidth,font)=>{ctx.font=font;const words=String(text||'').split(/\s+/);const lines=[];let line='';for(const word of words){const next=line?line+' '+word:word;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=word;}else line=next;}if(line)lines.push(line);return lines;};
-   const headline=String(slide?.headline||'').slice(0,110),body=String(slide?.body||'').slice(0,180);
-   ctx.fillStyle='#8bbcff';ctx.font='700 22px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText('KURZER PRODUKTCHECK',64,780);
-   ctx.fillStyle='#ffffff';const titleLines=wrap(headline,896,'700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
-   let y=842;for(const line of titleLines){ctx.font='700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=54;}
-   ctx.fillStyle='#d7e2f2';const bodyLines=wrap(body,896,'400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
-   y+=12;for(const line of bodyLines){ctx.font='400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=37;}
+   // A solid lower panel fully masks accidental text/logos produced by source screenshots.
+   const gradient=ctx.createLinearGradient(0,650,0,820);
+   gradient.addColorStop(0,'rgba(7,15,29,0)');
+   gradient.addColorStop(.58,'rgba(7,15,29,.94)');
+   gradient.addColorStop(1,'rgba(7,15,29,.98)');
+   ctx.fillStyle=gradient;ctx.fillRect(0,650,1024,502);
+   const wrap=(text,maxWidth,font,maxLines)=>{
+    ctx.font=font;const words=String(text||'').replace(/\\s+/g,' ').trim().split(' ');const lines=[];let line='';
+    for(const word of words){const next=line?line+' '+word:word;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=word;}else line=next;}
+    if(line)lines.push(line);
+    if(lines.length>maxLines){lines.length=maxLines;let last=lines[maxLines-1];while(last&&ctx.measureText(last+'…').width>maxWidth)last=last.slice(0,-1);lines[maxLines-1]=last.trim()+'…';}
+    return lines;
+   };
+   const headlines=['Vor dem Kauf genau hinsehen','Diese Details solltest du prüfen','Passt das Modell zu deinem Bedarf?'];
+   const bodies=[
+    'Originalprodukt ansehen und Details vor dem Kauf prüfen.',
+    'Material, Passform und Verarbeitung direkt beim Händler prüfen.',
+    'Varianten, Lieferumfang und Rückgabebedingungen vergleichen.'
+   ];
+   ctx.fillStyle='#8bbcff';ctx.font='700 23px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+   ctx.fillText('KURZER PRODUKTCHECK',64,824);
+   ctx.fillStyle='#ffffff';
+   const titleLines=wrap(headlines[index]||slide?.headline||'Produktcheck',896,'700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+   let y=900;for(const line of titleLines){ctx.font='700 48px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=60;}
+   ctx.fillStyle='#d7e2f2';
+   const bodyLines=wrap(bodies[index]||'Produktdetails beim Händler prüfen.',896,'400 29px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif',2);
+   y+=18;for(const line of bodyLines){ctx.font='400 29px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=40;}
    resolve(canvas.toDataURL('image/png'));
-  };img.onerror=()=>reject(new Error('Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
+  };img.onerror=()=>reject(new Error('Produktfoto konnte nicht verarbeitet werden.'));img.src=dataUrl;
  });
 }
 async function generateSlideImages(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
  const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
- const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
- const token=String(localStorage.getItem('northstar_media_token')||'').trim();
- if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
- if(!referenceSources.length){toast('Kein gespeichertes Produktbild gefunden.');return;}
- let referenceImages;
- try{referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));}catch(error){toast(error.message||'Referenzbilder konnten nicht vorbereitet werden.');return;}
+ if(!referenceSources.length){toast('Kein gespeichertes Produktfoto gefunden.');return;}
  const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
- if(button){button.disabled=true;button.textContent='Generierung läuft …';}
+ if(button){button.disabled=true;button.textContent='Slides werden erstellt …';}
  post.draft.generatedSlides=post.draft.generatedSlides||[];
  try{
-  for(let i=0;i<post.draft.slides.length;i++){
-   if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
-   const slide=post.draft.slides[i];
-   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact same product. Use the references together to preserve the exact product identity, shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
-   const start=(i*2)%referenceImages.length;
-   const selectedReferences=referenceImages.length<=4?referenceImages:Array.from({length:4},(_,offset)=>referenceImages[(start+offset)%referenceImages.length]);
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:selectedReferences})});
-   const payload=await response.json().catch(()=>({}));
-   if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
-   if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
-   const finalImage=await cropImageToEightNinths(payload.imageDataUrl,slide);
-   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9'};
+  for(let i=0;i<3;i++){
+   if(status)status.textContent='Originalfoto-Slide '+(i+1)+' von 3 wird erstellt …';
+   const slide=post.draft.slides[i]||{};
+   const source=referenceSources[i%referenceSources.length];
+   const finalImage=await createOriginalPhotoSlide(source,slide,i);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:'Northstar Originalfoto-Compositor',aspectRatio:'8:9',sourceReferenceIndex:i%referenceSources.length};
    await db.put('posts',post);
   }
-  post.draft.productionStatus='Drei generierte 8:9-Bilddateien lokal gespeichert. Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
-  post.status='Bilder generiert – Freigabe offen';post.updatedAt=new Date().toISOString();
-  await db.put('posts',post);log('Drei BOFU-Slides generiert',post.title);
-  state.selectedPostId=post.id;renderPage();toast('Drei Slides in Northstar gespeichert.');
- }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Bildgenerierung fehlgeschlagen: '+error.message);}
- finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 Slides jetzt generieren';}}
+  post.draft.productionStatus='Drei originalgetreue 8:9-Slides aus den gespeicherten Produktfotos erstellt. Texte separat eingeblendet; Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
+  post.status='Originalfoto-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
+  await db.put('posts',post);log('Drei Originalfoto-Slides erstellt',post.title);
+  state.selectedPostId=post.id;renderPage();toast('Drei originalgetreue Slides erstellt und lokal gespeichert.');
+ }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Slide-Erstellung fehlgeschlagen: '+error.message);}
+ finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 Slides jetzt erstellen';}}
 }
 async function handlePostAction(action,id){
  const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
