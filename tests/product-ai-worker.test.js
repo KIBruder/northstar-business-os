@@ -6,7 +6,7 @@ const token='test-secret';
 const image='data:image/jpeg;base64,aGVsbG8=';
 const analysis={
  productName:'Sample item',category:'home & living',summary:'Visual product analysis',
- visibleIdentity:'Exact visible shape and finish',verifiedVisibleFeatures:'Visible front panel',
+ visibleIdentity:'Exact visible shape and finish',visibleFeatures:'Visible front panel',
  unknowns:['Hidden specifications'],audience:'Potential buyers',
  hooks:['Hook','Detail','Question'],
  slideScenes:['Product-first hook scene','Close-up detail scene','Everyday use scene'],
