@@ -236,37 +236,50 @@ function prepareFluxReferenceImage(dataUrl){
   };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
  });
 }
+async function requestProductAIAnalysis(product,referenceSources=null){
+ const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const token=String(localStorage.getItem('northstar_media_token')||'').trim();
+ if(!endpoint||!token)throw new Error('Für die Produkt-KI fehlt die Cloudflare-Worker-Verbindung.');
+ const sources=(referenceSources||[
+  ...(Array.isArray(product?.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),
+  product?.imageDataUrl,...(product?.screenshotDataUrls||[])
+ ]).filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,3);
+ if(!sources.length)throw new Error('Die Produkt-KI benötigt mindestens ein hochgeladenes Produktbild.');
+ const images=await Promise.all(sources.map(prepareFluxReferenceImage));
+ const analyzeUrl=endpoint.replace(/\\/api\\/generate-image\\/?$/,'/api/analyze-product');
+ if(analyzeUrl===endpoint)throw new Error('Worker-Endpunkt muss auf /api/generate-image enden, damit die Produkt-KI erreichbar ist.');
+ const response=await fetch(analyzeUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({
+  product:{name:String(product?.name||''),description:String(product?.description||''),merchant:String(product?.merchant||'')},
+  images
+ })});
+ const payload=await response.json().catch(()=>({}));
+ if(!response.ok)throw new Error(payload.error||'Produkt-KI fehlgeschlagen ('+response.status+').');
+ if(!payload.analysis||!Array.isArray(payload.analysis.slideScenes)||payload.analysis.slideScenes.length<3)throw new Error('Die Produkt-KI lieferte keinen vollständigen Drei-Slide-Plan.');
+ product.aiCreative={...payload.analysis,model:payload.model||'Cloudflare Workers AI vision + language',analyzedAt:new Date().toISOString(),referenceCount:images.length};
+ product.analysis={...(product.analysis||{}),type:'cloudflare-vision-ai',summary:payload.analysis.summary||'Produkt mit KI-Bildanalyse ausgewertet.',createdAt:new Date().toISOString(),angles:payload.analysis.slideScenes};
+ await db.put('products',product);
+ return product.aiCreative;
+}
 function buildProductCreative(product){
- const name=String(product?.name||'dieses Produkt').trim(),description=String(product?.description||'').trim();
- const lower=(name+' '+description).toLocaleLowerCase('de-DE');
- const usableDescription=description.length>15&&!(/\b5g\b|\b4g\b|\blte\b|\d{1,2}:\d{2}|©|[<>]{1,}|kostenloser versand|lieferung bis/i.test(description));
- const facts=usableDescription?description.slice(0,360):'';
- const verifiedPrice=product?.price!==null&&product?.price!==undefined&&product?.price!==''&&Boolean(product?.priceVerified);
- let category='general',hook='Würdest du dieses Produkt ausprobieren?',benefit='Schau dir die Details genauer an',question='Wäre das etwas für dich?';
- let scenes=['A real person casually showing the exact product in a believable everyday setting, candid iPhone 12 mirror selfie or handheld photo.','A close, clear smartphone photo of the exact product, emphasizing only details visibly present in the reference.','A second natural user-generated lifestyle photo with the exact same product, different framing but unchanged design.'];
- let visibleCue='the exact visible shape, colors, materials and construction';
- if(/jacke|fleece|mantel|hoodie|parka|weste|coat|jacket|pullover|sweatshirt|windbreaker/i.test(lower)){
-  category='apparel';hook='POV: Du findest genau so eine Jacke';benefit='So sieht sie getragen aus – achte auf den Schnitt';question='Würdest du sie im Alltag tragen?';
-  scenes=['A believable casual mirror selfie of one adult wearing the exact same garment from the reference, front view, relaxed natural pose, ordinary home hallway or bedroom, iPhone 12 snapshot.','A close smartphone photograph of the exact same garment laid naturally on a bed or sofa. Show its real hood, front closure, pockets, cuffs and lining only where visible in the reference. Do not add or remove any component.','A second believable casual mirror selfie or candid indoor photo of an adult wearing the exact same garment, slightly different pose and camera distance. The garment must remain identical to the reference.'];
-  visibleCue='the garment exact hood shape, closure, pocket placement, cuffs, lining, logo and color';
- }else if(/bohrer|schrauber|werkzeug|säge|fräse|zange|schleifer|tool|drill/i.test(lower)){
-  category='tools';hook='Bevor du das nächste Projekt startest …';benefit='Schau dir Bauform und Zubehör genau an';question='Für welches Projekt würdest du es nutzen?';scenes=['A real DIY user casually holding the exact tool from the reference in a believable home workshop.','A close smartphone photo of the exact tool and only accessories visibly included in the reference. Preserve every control, attachment and label.','A natural use-context photo of the exact tool, with no invented attachments or altered controls.'];visibleCue='the exact tool housing, controls, attachments, labels and proportions';
- }else if(/kopfhörer|headset|lautsprecher|mikrofon|speaker|earbuds/i.test(lower)){
-  category='audio';hook='Wäre das ein Upgrade für dein Setup?';benefit='Achte auf Form und sichtbare Anschlüsse';question='Gaming, Musik oder Arbeit?';scenes=['A casual real-person desk or mirror photo with the exact audio product.','A close smartphone photo of the exact product, preserving buttons, ports and accessories as shown.','A natural everyday photo of the exact audio product in use, without invented features.'];visibleCue='the exact product shape, buttons, ports, color and included parts';
- }else if(/brille|smart glasses|ar glasses|rokid|xreal|ray-ban|sonnenbrille|sunglasses/i.test(lower)){
-  category='eyewear';hook='Wäre das dein nächstes Tech-Upgrade?';benefit='Schau dir Design und Details genau an';question='Würdest du so eine Brille ausprobieren?';
-  scenes=['A candid iPhone 12 lifestyle photo of an adult naturally wearing the exact same glasses from the reference, front three-quarter view, believable everyday indoor setting. Keep the frame shape, lens tint, arms, hinges and all visible details identical.','A close, clean smartphone product photo of the exact same glasses, clearly showing the frame, lenses, arms and hinges. No extra accessories or invented components.','A second candid everyday lifestyle photo of the same exact glasses being worn outdoors in soft natural light. Preserve the exact frame, lens shape, color and proportions from the reference.'];
-  visibleCue='the exact glasses frame silhouette, lens shape and tint, temple arms, hinges, logo placement and proportions';
- }else if(/handy|smartphone|tablet|laptop|monitor|kamera|phone|computer/i.test(lower)){
-  category='electronics';hook='Bevor du dein Setup aufrüstest …';benefit='Schau dir Größe und Anschlüsse genau an';question='Wäre das ein Upgrade für dich?';scenes=['A candid iPhone-style desk or mirror photo featuring the exact device.','A close smartphone photo showing the exact device body, camera layout, screen and ports from the reference.','A natural everyday photo of the exact device in use, preserving its real proportions and design.'];visibleCue='the exact device shape, screen, camera layout, ports and proportions';
- }else if(/lampe|licht|leuchte|led|beleuchtung/i.test(lower)){
-  category='lighting';hook='Dieses Detail könnte deinen Raum verändern';benefit='So wirkt die Leuchte im Raum';question='In welchem Raum würdest du sie aufstellen?';scenes=['A realistic ordinary room photo featuring the exact light product.','A close smartphone photo of the exact fixture and controls shown in the reference.','A second natural room photo with the same exact fixture, no invented light modes.'];visibleCue='the exact fixture shape, materials, controls and visible light source';
- }else if(/garten|rasen|pflanze|bewässer|mäher|heckenschere/i.test(lower)){
-  category='garden';hook='Für dein nächstes Gartenprojekt?';benefit='Schau dir Handhabung und Details an';question='Wäre das in deinem Garten hilfreich?';scenes=['A natural outdoor iPhone photo with the exact garden product in a believable setting.','A close smartphone photo of the exact product and only confirmed accessories.','A natural garden-use scene with the same exact product and no invented functions.'];visibleCue='the exact product shape, components and visible attachments';
- }else if(/küche|kochen|kaffee|pfanne|messer|staubsauger|haushalt/i.test(lower)){
-  category='home';hook='Wäre das ein praktisches Upgrade für zuhause?';benefit='Schau dir Form und Handhabung an';question='Würde dir das den Alltag erleichtern?';scenes=['A candid everyday kitchen or home photo featuring the exact product.','A close smartphone photo of the exact product and only accessories shown in the reference.','A natural in-use home scene featuring the same exact product.'];visibleCue='the exact product shape, materials, controls and visible components';
- }
- return {name,category,hook,benefit,bridge:benefit,question,scenes,facts,visibleCue,cta:'Link öffnen und Details prüfen'};
+ const ai=product?.aiCreative||{};
+ const name=String(ai.productName||product?.name||'dieses Produkt').trim();
+ const facts=String(ai.verifiedVisibleFeatures||product?.description||'').trim().slice(0,700);
+ const scenes=Array.isArray(ai.slideScenes)&&ai.slideScenes.length>=3?ai.slideScenes.slice(0,3):[
+  'Authentisches Smartphone-Foto: Das exakte Originalprodukt ist sofort groß und klar erkennbar, in einer plausiblen Alltagssituation passend zu seiner tatsächlichen Verwendung.',
+  'Produktdetail-Aufnahme des exakten Originalprodukts. Zeige die wichtigsten tatsächlich sichtbaren Merkmale und die reale Bauform aus den Referenzbildern.',
+  'Natürliches UGC-Abschlussmotiv mit demselben Originalprodukt im passenden Nutzungskontext. Produkt bleibt vollständig und unverdeckt sichtbar.'
+ ];
+ const hooks=Array.isArray(ai.hooks)&&ai.hooks.length>=3?ai.hooks.slice(0,3):[
+  'Das solltest du vor dem Kauf wissen',
+  'Schau dir diese Produktdetails an',
+  'Wäre das für deinen Alltag interessant?'
+ ];
+ return {
+  name,category:String(ai.category||'KI-erkanntes Produkt'),hook:String(hooks[0]),benefit:String(hooks[1]),
+  bridge:String(hooks[1]),question:String(hooks[2]),scenes,
+  facts,visibleCue:String(ai.visibleIdentity||'exakte sichtbare Produktform, Farben, Materialien, Komponenten und Markenmerkmale aus den Originalreferenzen'),
+  cta:'Link öffnen und Details prüfen',aiSummary:String(ai.summary||'')
+ };
 }
 function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creative){
  return new Promise((resolve,reject)=>{
@@ -308,6 +321,7 @@ async function generateOriginalPhotoSlides(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
  const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
+  if(!product.aiCreative?.analyzedAt)await requestProductAIAnalysis(product);
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
  if(!referenceSources.length){toast('Kein gespeichertes Produktfoto gefunden. Bitte zuerst Produktbilder hochladen.');return;}
  const button=$('#generateOriginalSlides'),status=$('#mediaGenerationStatus');
@@ -347,27 +361,28 @@ async function generateSlideImages(postId){
  const verifiedPrice=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
  const creative=buildProductCreative(product);
  try{
-  const primaryReference=await prepareFluxReferenceImage(referenceSources[0]);
+  if(!product.aiCreative?.analyzedAt||!Array.isArray(product.aiCreative.slideScenes)||product.aiCreative.slideScenes.length<3)await requestProductAIAnalysis(product,referenceSources);
+  const productReferences=await Promise.all(referenceSources.slice(0,3).map(prepareFluxReferenceImage));
   for(let i=0;i<3;i++){
    if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert – Originalreferenz wird einzeln geschützt …';
    const slide=post.draft.slides[i]||{};
-   const selectedIndex=0; // One canonical primary reference across all slides reduces variant drift.
-   const base='Create a photorealistic candid iPhone 12 smartphone photograph for a TikTok product carousel, vertical 8:9. PRODUCT IDENTITY HAS ABSOLUTE PRIORITY OVER THE SCENE. The supplied reference is the source of truth. Reproduce the exact same physical item; do not redesign or reinterpret it. Preserve its exact silhouette, proportions, color, fabric or material, seams, stitching, panels, closures, pockets, zippers, buttons, labels, logo and their precise positions. Never add, remove, replace, mirror, simplify or relocate any product component. Do not merge different product variants. If a detail is unclear, keep it unchanged and do not invent it. Extract the physical product from any supplied shopping screenshot and create a clean new lifestyle photograph around it. Do not reproduce screenshot UI, black letterbox bars, screenshot borders, price panels, promo graphics or unrelated text. Change only the surrounding environment, camera framing and human pose. Keep the item fully visible, sharply focused and large enough to compare against the reference. Natural imperfect phone-photo quality, realistic ambient light, believable room, casual spontaneous framing, subtle sensor noise; no studio/catalog look. No added text, no graphic elements, no watermark. Product context: '+creative.name+'. Category: '+creative.category+'. Visible identity details to preserve: '+creative.visibleCue+'. '+(creative.facts?'Only these supplied description details may inform the scene: '+creative.facts:'No verified technical specifications; make no performance or material claims.')+' ';
+   const selectedIndex=0; // The vision model and FLUX receive up to three views of the same product.
+   const base='Create an authentic photorealistic iPhone 12 UGC product photograph for a TikTok carousel, vertical 8:9. The reference images show the exact product and are the only visual source of truth. First identify the physical product from the images, then preserve its exact silhouette, dimensions, colors, materials, construction, labels, logos, controls, included parts and all visible details. Do not redesign, substitute, stylize, merge variants, add fictional features or change brand marks. The product itself must be the clear hero and remain prominently visible, sharp, unobstructed and large enough to recognize. The environment, person, camera angle and props must be chosen to suit THIS product and its real use; never force a generic portrait or unrelated lifestyle scene. If the product is clothing, show the garment; if it is a device, show the device; if it is furniture, show the furniture; if it is food, show the food; if it is a tool, show the tool. This is guidance, not a hard-coded category list: infer the actual category from the reference images. Prefer a product-only composition whenever a lifestyle scene risks hiding or altering the item. Do not reproduce shopping UI, screenshot borders, black bars, price panels or promotional graphics. No added text, no graphic elements, no watermark. Product: '+creative.name+'. AI-identified category: '+creative.category+'. AI-identified visible identity: '+creative.visibleCue+'. Only evidence-backed details: '+(creative.facts||'No verified technical specifications; do not invent claims.')+'. '+(creative.aiSummary||'')+' ';
    const directions=[
      'SLIDE 1 / HOOK: '+creative.scenes[0]+' Product must match the reference exactly, not approximately. Do not invent product details.',
      'SLIDE 2 / PRODUCT DETAIL: '+creative.scenes[1]+' Product must match the reference exactly. Prioritize a faithful, clear product view over a dramatic composition.',
      'SLIDE 3 / CTA LIFESTYLE: '+creative.scenes[2]+' Product must be the same exact item as slide 1 and slide 2. New setting is allowed; product redesign is forbidden.'
     ];
    // The image model may change the scene, but the reference product identity must remain exact.
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:[primaryReference]})});
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:productReferences})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
    const finalImage=await composeGeneratedSlide(payload.imageDataUrl,slide,i,product,verifiedPrice?Number(product.price):null,creative);
-   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:selectedIndex,referenceCount:1};
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:selectedIndex,referenceCount:productReferences.length};
    await db.put('posts',post);
   }
-  post.draft.productionStatus='Drei neu generierte 8:9-UGC-Szenen erstellt. Eine kanonische Produktreferenz wird für alle Slides verwendet, um Varianten- und Detailabweichungen zu reduzieren. Bilddetails vor Veröffentlichung visuell gegen das Original prüfen.';
+  post.draft.productionStatus='Drei neu generierte 8:9-UGC-Szenen erstellt. Die universelle Produkt-KI analysiert bis zu drei Referenzbilder und steuert Kategorie, Motive und Drei-Slide-Dramaturgie. Bilddetails vor Veröffentlichung visuell gegen das Original prüfen.';
   post.status='KI-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
   await db.put('posts',post);log('Drei KI-UGC-Slides generiert',post.title);
   state.selectedPostId=post.id;renderPage();toast('Drei KI-Slides mit produktbezogenen Texten gespeichert.');
