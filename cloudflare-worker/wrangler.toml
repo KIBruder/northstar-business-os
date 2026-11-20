@@ -1,0 +1,10 @@
+name = "northstar-image-generator"
+main = "src/index.js"
+compatibility_date = "2026-11-20"
+workers_dev = true
+
+[ai]
+binding = "AI"
+
+[vars]
+ALLOWED_ORIGIN = "https://kibruder.github.io"

@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, feature/automatic-screenshot-ocr]
+    branches: [main, feature/automatic-screenshot-ocr, feature/content-production-workflow]
 jobs:
   syntax:
     runs-on: ubuntu-latest
@@ -18,3 +18,4 @@ jobs:
           node --check db.js
           node --check analysis-engine.js
           node --check sw.js
+          node --check cloudflare-worker/src/index.js

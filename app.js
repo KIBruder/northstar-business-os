@@ -165,13 +165,108 @@ function contentDetail(post,product){
  const draft=post.draft;
  return `<section class="panel content-detail" id="contentDetail">
   <div class="panel-head"><div><h3>${esc(post.title)}</h3><p>${product?`Produkt: ${esc(product.name)}`:'Manueller Entwurf'} · ${esc(post.channel||'TikTok')}</p></div><button class="icon-button" id="closeContentDetail" type="button">✕</button></div>
-  ${draft?`<div class="draft-meta"><span class="status-tag">${esc(draft.strategy||'BOFU')}</span><span class="subtle">5-Slide-Textentwurf · ${new Date(draft.createdAt).toLocaleString('de-DE')}</span></div>
-  <div class="carousel-draft">${draft.slides.map((slide,i)=>`<article class="draft-slide"><div class="draft-slide-top"><strong>Slide ${i+1} von ${draft.slides.length}</strong><span>${esc(slide.role)}</span></div><h4>${esc(slide.headline)}</h4><p>${esc(slide.body)}</p><small>${esc(slide.visualNote)}</small></article>`).join('')}</div>
-  <div class="detail-block"><span>Caption-Entwurf</span><p>${esc(draft.caption)}</p></div>
-  <div class="detail-block"><span>Hashtag-Entwurf</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
-  <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Text kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Entwurf neu erstellen</button></div>
-  `:`<div class="empty-state compact"><h3>Noch kein Carousel-Text erstellt</h3><p>Erstelle aus den gespeicherten Produktangaben einen ersten 5-Slide-Entwurf.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ Carousel-Entwurf erstellen</button></div>`}
+  ${draft?`<div class="draft-meta"><span class="status-tag">${esc(draft.strategy||'BOFU')}</span><span class="subtle">3-Slide-BOFU-Paket · ${new Date(draft.createdAt).toLocaleString('de-DE')}</span></div>
+  <div class="notice"><strong>Produktionsstatus</strong><span>${esc(draft.productionStatus||'Text- und Produktionsbrief erstellt. Bild-/Videodateien müssen noch generiert werden.')}</span></div>
+  <div class="carousel-draft">${draft.slides.map((slide,i)=>`<article class="draft-slide"><div class="draft-slide-top"><strong>Slide ${i+1} von ${draft.slides.length}</strong><span>${esc(slide.role)}</span></div><h4>${esc(slide.headline)}</h4><p>${esc(slide.body)}</p><small>${esc(slide.visualNote)}</small><div class="detail-block"><span>Bildprompt / Produktionsanweisung</span><p>${esc(slide.imagePrompt||slide.visualNote)}</p></div></article>`).join('')}</div>
+  <div class="detail-block"><span>Voiceover / Sprechtext</span><p>${esc(draft.videoScript||'')}</p></div>
+  <div class="detail-block"><span>Videoplan · 9:16</span><p>${(draft.videoScenes||[]).map((scene,i)=>`${i+1}. ${scene.time} – ${scene.visual} | Text: ${scene.overlay}`).map(esc).join('<br>')}</p></div>
+  <div class="detail-block"><span>Video-Generierungs-Prompt</span><p>${esc(draft.videoPrompt||'')}</p></div>
+  <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
+  <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
+  <section class="media-generation-panel">
+   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">Cloudflare Workers AI · FLUX.2 Klein</span></div>
+   <div class="media-connection-grid">
+    <label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label>
+    <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
+   </div>
+   <p class="form-hint">Kein OpenAI-API-Key erforderlich. Der Worker nutzt das kostenlose Cloudflare-AI-Tageskontingent; bei ausgeschöpftem Limit wird die Generierung gestoppt.</p>
+   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert.</div>
+   ${generatedSlidesMarkup(draft)}
+  </section>
+  <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
+  `:`<div class="empty-state compact"><h3>Noch kein Produktionspaket</h3><p>Erstelle aus dem Produkt einen BOFU-Beitrag mit drei Slides, Voiceover, Szenenplan, Bildprompts, Caption und Hashtags.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ BOFU-Produktionspaket erstellen</button></div>`}
  </section>`;
+}
+function generatedSlidesMarkup(draft){
+ const slides=draft.generatedSlides||[];
+ if(!slides.length)return '';
+ return '<div class="generated-slide-grid">'+slides.map((item,i)=>'<article class="generated-slide-card"><img src="'+item.dataUrl+'" alt="Generierter Slide '+(i+1)+'"><strong>Slide '+(i+1)+'</strong><a class="button button-secondary" href="'+item.dataUrl+'" download="northstar-slide-'+(i+1)+'.png">Bild speichern</a></article>').join('')+'</div>';
+}
+function saveMediaSettings(){
+ const endpoint=$('#mediaEndpoint')?.value.trim()||'',token=$('#mediaToken')?.value.trim()||'';
+ if(!/^https:\/\//i.test(endpoint)||!token){toast('Bitte HTTPS-Worker-Adresse und Zugriffstoken eintragen.');return;}
+ localStorage.setItem('northstar_media_endpoint',endpoint);
+ localStorage.setItem('northstar_media_token',token);
+ toast('Generator-Verbindung lokal gespeichert.');
+}
+function prepareFluxReferenceImage(dataUrl){
+ return new Promise((resolve,reject)=>{
+  const img=new Image();img.onload=()=>{
+   const maxEdge=510,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+   const width=Math.max(1,Math.round((img.naturalWidth||img.width)*scale)),height=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
+   const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas für Referenzbild nicht verfügbar.'));return;}
+   ctx.drawImage(img,0,0,width,height);
+   resolve(canvas.toDataURL('image/jpeg',0.84));
+  };img.onerror=()=>reject(new Error('Produkt-Referenzbild konnte nicht verkleinert werden.'));img.src=dataUrl;
+ });
+}
+function cropImageToEightNinths(dataUrl,slide){
+ return new Promise((resolve,reject)=>{
+  const img=new Image();img.onload=()=>{
+   const ratio=8/9,source=img.width/img.height;let sx=0,sy=0,sw=img.width,sh=img.height;
+   if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
+   else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
+   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
+   ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
+   const gradient=ctx.createLinearGradient(0,620,0,1152);gradient.addColorStop(0,'rgba(5,12,24,0)');gradient.addColorStop(.24,'rgba(5,12,24,.68)');gradient.addColorStop(1,'rgba(5,12,24,.92)');
+   ctx.fillStyle=gradient;ctx.fillRect(0,620,1024,532);
+   const wrap=(text,maxWidth,font)=>{ctx.font=font;const words=String(text||'').split(/\s+/);const lines=[];let line='';for(const word of words){const next=line?line+' '+word:word;if(ctx.measureText(next).width>maxWidth&&line){lines.push(line);line=word;}else line=next;}if(line)lines.push(line);return lines;};
+   const headline=String(slide?.headline||'').slice(0,110),body=String(slide?.body||'').slice(0,180);
+   ctx.fillStyle='#8bbcff';ctx.font='700 22px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText('KURZER PRODUKTCHECK',64,780);
+   ctx.fillStyle='#ffffff';const titleLines=wrap(headline,896,'700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
+   let y=842;for(const line of titleLines){ctx.font='700 43px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=54;}
+   ctx.fillStyle='#d7e2f2';const bodyLines=wrap(body,896,'400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif').slice(0,3);
+   y+=12;for(const line of bodyLines){ctx.font='400 27px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';ctx.fillText(line,64,y);y+=37;}
+   resolve(canvas.toDataURL('image/png'));
+  };img.onerror=()=>reject(new Error('Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
+ });
+}
+async function generateSlideImages(postId){
+ const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
+ const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
+ if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
+ const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const token=String(localStorage.getItem('northstar_media_token')||'').trim();
+ if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
+ const referenceSource=[product.imageDataUrl,...(product.screenshotDataUrls||[])].find(x=>typeof x==='string'&&x.startsWith('data:image/'));
+ if(!referenceSource){toast('Kein gespeichertes Produktbild gefunden.');return;}
+ let referenceImage;
+ try{referenceImage=await prepareFluxReferenceImage(referenceSource);}catch(error){toast(error.message||'Referenzbild konnte nicht vorbereitet werden.');return;}
+ const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
+ if(button){button.disabled=true;button.textContent='Generierung läuft …';}
+ post.draft.generatedSlides=post.draft.generatedSlides||[];
+ try{
+  for(let i=0;i<post.draft.slides.length;i++){
+   if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
+   const slide=post.draft.slides[i];
+   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact product. Preserve its original shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images:[referenceImage]})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
+   if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
+   const finalImage=await cropImageToEightNinths(payload.imageDataUrl,slide);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9'};
+   await db.put('posts',post);
+  }
+  post.draft.productionStatus='Drei generierte 8:9-Bilddateien lokal gespeichert. Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
+  post.status='Bilder generiert – Freigabe offen';post.updatedAt=new Date().toISOString();
+  await db.put('posts',post);log('Drei BOFU-Slides generiert',post.title);
+  state.selectedPostId=post.id;renderPage();toast('Drei Slides in Northstar gespeichert.');
+ }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Bildgenerierung fehlgeschlagen: '+error.message);}
+ finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 Slides jetzt generieren';}}
 }
 async function handlePostAction(action,id){
  const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
@@ -188,34 +283,47 @@ async function generateContentDraft(postId){
  const product=state.products.find(x=>x.id===post.productId && x.workspaceId===state.workspaceId);
  if(!product){toast('Für diesen Entwurf ist kein Produkt verknüpft.');return;}
  const panel=$('#contentDetail');
- if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>Content-Entwurf wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten werden geprüft</li><li id="genStep2">Slide-Dramaturgie wird aufgebaut</li><li id="genStep3">Caption und Hashtags werden erstellt</li><li id="genStep4">Entwurf wird lokal gespeichert</li></ol></div>`);}
+ if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>BOFU-Produktionspaket wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten und Beleglage prüfen</li><li id="genStep2">Drei-Slide-Dramaturgie aufbauen</li><li id="genStep3">Voiceover, Szenen und Medienprompts erstellen</li><li id="genStep4">Paket lokal speichern</li></ol></div>`);}
  const setStep=(n,width)=>{const bar=$('#generationBar');if(bar)bar.style.width=width+'%';const step=$(`#genStep${n}`);if(step)step.classList.add('step-done');};
- setStep(1,28);await new Promise(r=>setTimeout(r,220));
- const name=product.name;
- const description=String(product.description||'').trim();
- const hooks=product.analysis?.hooks||[`Das solltest du vor dem Kauf von ${name} wissen`,`Für wen lohnt sich ${name} wirklich?`,`Diese Punkte solltest du bei ${name} prüfen`];
- const angles=product.analysis?.angles||[];
- setStep(2,52);await new Promise(r=>setTimeout(r,220));
- const safeBenefit=description?description.split(/[.!?\\n]/).map(x=>x.trim()).filter(Boolean)[0]:'Noch kein belegter Produktvorteil hinterlegt. Ergänze Produktmerkmale, bevor konkrete Vorteile beworben werden.';
+ setStep(1,22);await new Promise(r=>setTimeout(r,100));
+ const name=String(product.name||'Produkt').trim();
+ const rawDescription=String(product.description||'').trim();
+ const noisy=/(?:\\b5g\\b|\\b4g\\b|\\blte\\b|\\d{1,2}:\\d{2}|©|[<>]{1,}|\\b\\d{1,2}%\\b|kostenloser versand|lieferung bis|verlängerte rückgabe)/i.test(rawDescription)||rawDescription.length>900;
+ const verifiedDescription=!noisy&&rawDescription.length>15?rawDescription:'';
+ const priceVerified=product.price!==null&&product.price!==undefined&&product.price!==''&&String(product.priceStatus||'').toLowerCase()==='verified';
+ const seller=String(product.merchant||'').trim();
+ const source=String(product.sourceUrl||'').trim();
+ const facts=verifiedDescription||'Produktmerkmale sind noch nicht ausreichend verifiziert. Vor der Veröffentlichung die tatsächlichen Eigenschaften direkt auf der Produktseite prüfen.';
+ const priceText=priceVerified?`Preis laut geprüftem Datensatz: ${product.price} €.`:'Keinen Preis nennen: Preis fehlt oder ist nicht als verifiziert markiert.';
+ const sourceText=source?'Quellenlink ist hinterlegt, aber nicht automatisch unabhängig geprüft.':'Noch keine Produktquelle hinterlegt.';
+ const title=name.replace(/[.!?]+$/,'');
  const slides=[
-  {role:'Hook / Scroll-Stopper',headline:hooks[0],body:'Kurzer Einstieg. Noch keine unbelegten Produkteigenschaften behaupten.',visualNote:'Authentisches Produktbild oder passendes Reaktionsmotiv; Text kurz halten.'},
-  {role:'Problem / Bedarf',headline:`Suchst du eine passende Lösung rund um ${name}?`,body:'Zeige die konkrete Alltagssituation deiner Zielgruppe. Keine erfundenen Versprechen.',visualNote:'Problem- oder Anwendungssituation zeigen.'},
-  {role:'Produkt / belegbare Information',headline:'Was bisher über das Produkt bekannt ist',body:safeBenefit,visualNote:'Originalprodukt klar und unverfälscht zeigen. Fehlende Merkmale erst recherchieren.'},
-  {role:'Kaufentscheidung / Vertrauen',headline:'Das solltest du vor dem Kauf prüfen',body:product.sourceUrl?'Quelle ist hinterlegt, wurde aber noch nicht unabhängig geprüft. Preis, Varianten und technische Daten vor Veröffentlichung kontrollieren.':'Noch keine belastbare Quelle hinterlegt. Preis, Varianten und technische Daten vor Veröffentlichung recherchieren.',visualNote:'Detailaufnahme; nur nachgewiesene Eigenschaften beschriften.'},
-  {role:'CTA / Abschluss',headline:`Mehr Details zu ${name} ansehen`,body:'Prüfe Preis, Verfügbarkeit und Produktdetails beim Händler. Affiliate-Hinweis vor Veröffentlichung ergänzen, falls zutreffend.',visualNote:'Produktbild mit ruhigem, eindeutigem Call-to-Action.'}
+  {role:'1 · Hook / Scroll-Stopper',headline:`Bevor du diese ${title} kaufst …`,body:'Ein konkreter Kaufcheck statt leerer Werbeversprechen. In den ersten Sekunden das Originalprodukt zeigen.',visualNote:'Vertikales 9:16-Standbild oder kurzer Reaktions-Clip als Einstieg; maximal eine kurze Textzeile.',imagePrompt:`Create a realistic 9:16 smartphone-style TikTok Shop opening visual for the exact product shown in the supplied reference image. Preserve the product design, color, proportions and details exactly. Natural handheld framing, authentic everyday environment, clear negative space for one short German hook. No invented logos, no fake claims, no price text.`},
+  {role:'2 · Produkt / belegbare Information',headline:`Was du bei ${title} prüfen solltest`,body:facts,visualNote:'Originalprodukt groß und unverändert zeigen; nur verifizierte Eigenschaften als Text einblenden.',imagePrompt:`Create a clean 9:16 product-detail visual using the supplied original product photo as the identity reference. Keep the product unchanged and photorealistic. Show useful close-up framing and a simple uncluttered background. Do not add features, accessories, labels or specifications that are not visible or supplied.`},
+  {role:'3 · BOFU / Kaufentscheidung',headline:'Passt das zu deinem Bedarf?',body:`${priceText} ${sourceText} Vor dem Kauf Varianten, Lieferumfang und Rückgabebedingungen prüfen.`,visualNote:'Ruhiger Abschluss mit Produktaufnahme und klarer Aufforderung, aktuelle Details beim Händler zu prüfen.',imagePrompt:`Create a minimal 9:16 final TikTok product frame using the exact supplied product reference. Product remains unchanged, centered and clearly visible, authentic smartphone photo aesthetic, clean space for a short German call to action. No fabricated discount, price, rating or urgency.`}
  ];
- setStep(3,78);await new Promise(r=>setTimeout(r,220));
- post.draft={strategy:post.strategy||'BOFU',slides,caption:`${name}: Diese Punkte solltest du vor dem Kauf prüfen. Produktdetails und aktuelle Konditionen beim Händler ansehen.`,hashtags:['#musthave','#produkttipp','#shopping','#vergleich','#affiliate'],createdAt:new Date().toISOString(),sourceType:'local-template-v1',notes:angles};
- post.status='Textentwurf erstellt';post.updatedAt=new Date().toISOString();
- await db.put('posts',post);log('Carousel-Textentwurf erstellt',`${post.title} · 5 Slides`);
- setStep(4,100);await new Promise(r=>setTimeout(r,180));
- state.selectedPostId=post.id;renderPage();toast('5-Slide-Textentwurf gespeichert.');
+ setStep(2,48);await new Promise(r=>setTimeout(r,100));
+ const videoScript=`Du überlegst, dir ${title} zu holen? Schau dir zuerst die Details an. ${verifiedDescription?facts:'Prüfe die tatsächlichen Eigenschaften und den Lieferumfang direkt beim Händler.'} Vergleiche Varianten und aktuelle Konditionen, bevor du entscheidest.`;
+ const videoScenes=[
+  {time:'0–3 s',visual:'Hook: Originalprodukt sofort im Bild, schneller Schnitt oder kurzer Reaction-Einstieg',overlay:`Vor dem Kauf von ${title} …`},
+  {time:'3–10 s',visual:'Nahaufnahme des Originalprodukts; zwei bis drei echte Details zeigen',overlay:verifiedDescription?'Nur belegte Merkmale zeigen':'Eigenschaften und Lieferumfang prüfen'},
+  {time:'10–15 s',visual:'Produkt im Alltag / ruhige Abschlussaufnahme',overlay:'Details und aktuelle Konditionen prüfen'}
+ ];
+ const videoPrompt=`Create a 15-second vertical 9:16 German TikTok Shop affiliate video for ${title}. Use the supplied product photo as a strict visual reference: do not alter product shape, branding, color or proportions. Style: authentic iPhone UGC, natural light, fast but clear edits, product visible in the first second, clean German on-screen captions, subtle sound design, no fake reviews, no fabricated specifications, no unverified price or discount. Voiceover: ${videoScript}`;
+ setStep(3,76);await new Promise(r=>setTimeout(r,100));
+ const caption=`${title}: Vor dem Kauf die Details prüfen und mit dem eigenen Bedarf abgleichen. ${seller?'Anbieter: '+seller+'. ':''}${source?'Produktquelle hinterlegt – bitte aktuelle Angaben dort kontrollieren.':'Aktuelle Produktdetails beim Händler prüfen.'}`;
+ const hashtags=['#tiktokshop','#produkttipp','#musthave','#shopping','#affiliate'];
+ post.draft={strategy:'BOFU',slides,caption,hashtags,videoScript,videoScenes,videoPrompt,createdAt:new Date().toISOString(),sourceType:'northstar-production-brief-v2',productionStatus:'Text, Szenenplan und Medienprompts erstellt. Bild-/Videodateien noch nicht generiert; Faktenprüfung vor Veröffentlichung erforderlich.',evidence:{descriptionVerified:Boolean(verifiedDescription),priceVerified:Boolean(priceVerified),sellerPresent:Boolean(seller),sourcePresent:Boolean(source)},notes:product.analysis?.angles||[]};
+ post.status='Produktionspaket erstellt';post.updatedAt=new Date().toISOString();
+ await db.put('posts',post);log('BOFU-Produktionspaket erstellt',`${post.title} · 3 Slides + Video-Brief`);
+ setStep(4,100);await new Promise(r=>setTimeout(r,100));
+ state.selectedPostId=post.id;renderPage();toast('BOFU-Produktionspaket gespeichert.');
 }
 function copyContentDraft(){
  const post=state.posts.find(x=>x.id===state.selectedPostId);if(!post?.draft)return;
  const d=post.draft;
- const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.visualNote}`),'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
- if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Content-Text kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
+ const text=[post.title,'',...d.slides.map((s,i)=>`SLIDE ${i+1} – ${s.role}\\n${s.headline}\\n${s.body}\\nBild: ${s.imagePrompt||s.visualNote}`),'',`VOICEOVER\\n${d.videoScript||''}`,'',`VIDEO-SZENEN\\n${(d.videoScenes||[]).map(s=>s.time+' – '+s.visual+' | Overlay: '+s.overlay).join('\\n')}`,'',`VIDEO-PROMPT\\n${d.videoPrompt||''}`,'',`CAPTION\\n${d.caption}`,'',d.hashtags.join(' ')].join('\\n\\n');
+ if(navigator.clipboard?.writeText){navigator.clipboard.writeText(text).then(()=>toast('Vollständiges Produktionspaket kopiert.')).catch(()=>toast('Kopieren im Browser nicht verfügbar.'));}else toast('Kopieren im Browser nicht verfügbar.');
 }
 const simplePages = {
  production:['Produktion','PRODUKTIONSSTEUERUNG','Bild- und Videoaufträge, Qualitätskontrolle und Export werden hier zentral gesteuert.','Die Generatoren werden erst angebunden, wenn kostenlose oder ausdrücklich freigegebene Werkzeuge technisch geprüft sind.'],
@@ -259,9 +367,13 @@ function renderPage(){
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
  document.querySelectorAll('[data-post-action]').forEach(b=>b.addEventListener('click',()=>handlePostAction(b.dataset.postAction,b.dataset.id)));
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
+ if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
+ if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
+ $('#saveMediaSettings')?.addEventListener('click',saveMediaSettings);
+ $('#generateSlideImages')?.addEventListener('click',e=>generateSlideImages(e.currentTarget.dataset.id));
 }
 function classifyProductUrl(raw){
  let u;
