@@ -178,7 +178,7 @@ function contentDetail(post,product){
   <section class="media-generation-panel">
    <div class="panel-head"><div><h3>KI-generierte UGC-Slides</h3><p>Drei authentische 8:9-iPhone-Slides mit Swipe-Dramaturgie generieren.</p></div><span class="status-tag">FLUX KI · iPhone-12-Look</span></div>
    <p class="form-hint">Standard ist FLUX: Aus deinen Produktreferenzen entstehen drei unterschiedliche 8:9-Lifestyle-Szenen. Northstar setzt Hook und BOFU-Text separat darüber. Prüfe vor Freigabe, ob das generierte Produkt exakt dem Original entspricht. Der Originalfoto-Modus bleibt als kostenlose Alternative verfügbar.</p>
-   <div class="media-connection-grid"><label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev"></label><label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label></div>
+   <div class="media-connection-grid"><label>Cloudflare-Worker-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://northstar-image-generator.kibruder.workers.dev/api/generate-image"></label><label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label></div>
    <div class="detail-actions"><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 KI-Szenen mit FLUX generieren</button><button class="button button-secondary" id="generateOriginalSlides" data-id="${post.id}">Originalfotos + BOFU-Text (ohne KI)</button></div>
    <div class="form-hint"><strong>Originalfoto-Modus:</strong> Kein KI-Repainting, keine neue Produktdarstellung. Northstar verwendet deine gespeicherten Produktfotos, beschneidet sie für 8:9 und setzt nur den BOFU-Text als Overlay darüber. Das ist die sichere Standardvariante für Produkt-Treue.</div>
    <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">FLUX-Verbindung speichern</button></div>
@@ -217,10 +217,21 @@ async function shareGeneratedSlides(postId,index=null){
   }
  }catch(error){if(error.name!=='AbortError')toast('Teilen nicht möglich: '+(error.message||'Bitte Datei laden verwenden.'));}
 }
+function normalizeMediaEndpoint(value){
+ const raw=String(value||'').trim().replace(/\/+$/,'');
+ if(!raw)return '';
+ try{
+  const url=new URL(raw);
+  if(url.protocol!=='https:')return '';
+  if(!/\/api\/generate-image$/i.test(url.pathname))url.pathname=url.pathname.replace(/\/$/,'')+'/api/generate-image';
+  return url.toString().replace(/\/$/,'');
+ }catch{return '';}
+}
 function saveMediaSettings(){
- const endpoint=$('#mediaEndpoint')?.value.trim()||'',token=$('#mediaToken')?.value.trim()||'';
- if(!/^https:\/\//i.test(endpoint)||!token){toast('Bitte HTTPS-Worker-Adresse und Zugriffstoken eintragen.');return;}
+ const endpoint=normalizeMediaEndpoint($('#mediaEndpoint')?.value||''),token=$('#mediaToken')?.value.trim()||'';
+ if(!endpoint||!token){toast('Bitte eine gültige HTTPS-Worker-Adresse und das Zugriffstoken eintragen.');return;}
  localStorage.setItem('northstar_media_endpoint',endpoint);
+ if($('#mediaEndpoint'))$('#mediaEndpoint').value=endpoint;
  localStorage.setItem('northstar_media_token',token);
  toast('Generator-Verbindung lokal gespeichert.');
 }
@@ -237,7 +248,7 @@ function prepareFluxReferenceImage(dataUrl){
  });
 }
 async function requestProductAIAnalysis(product,referenceSources=null){
- const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const endpoint=normalizeMediaEndpoint(localStorage.getItem('northstar_media_endpoint')||'');
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
  if(!endpoint||!token)throw new Error('Für die Produkt-KI fehlt die Cloudflare-Worker-Verbindung.');
  const sources=(referenceSources||[
@@ -246,8 +257,7 @@ async function requestProductAIAnalysis(product,referenceSources=null){
  ]).filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,3);
  if(!sources.length)throw new Error('Die Produkt-KI benötigt mindestens ein hochgeladenes Produktbild.');
  const images=await Promise.all(sources.map(prepareFluxReferenceImage));
- const analyzeUrl=endpoint.replace(/\/api\/generate-image\/?$/,'/api/analyze-product');
- if(analyzeUrl===endpoint)throw new Error('Worker-Endpunkt muss auf /api/generate-image enden, damit die Produkt-KI erreichbar ist.');
+ const analyzeUrl=endpoint.replace(/\/api\/generate-image$/i,'/api/analyze-product');
  const response=await fetch(analyzeUrl,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({
   product:{name:String(product?.name||''),description:String(product?.description||''),merchant:String(product?.merchant||'')},
   images
@@ -350,7 +360,7 @@ async function generateSlideImages(postId){
  const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
  const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
  if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
- const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const endpoint=normalizeMediaEndpoint(localStorage.getItem('northstar_media_endpoint')||'');
  const token=String(localStorage.getItem('northstar_media_token')||'').trim();
  if(!endpoint||!token){toast('Die gespeicherte Cloudflare-Worker-Verbindung fehlt. Bitte Verbindung in den Einstellungen erneut hinterlegen.');return;}
  const referenceSources=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].filter((x,i,all)=>typeof x==='string'&&x.startsWith('data:image/')&&all.indexOf(x)===i).slice(0,8);
@@ -562,7 +572,7 @@ function renderPage(){
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
  document.querySelectorAll('[data-post-action]').forEach(b=>b.addEventListener('click',()=>handlePostAction(b.dataset.postAction,b.dataset.id)));
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
- if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
+ if($('#mediaEndpoint'))$('#mediaEndpoint').value=normalizeMediaEndpoint(localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev');
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
