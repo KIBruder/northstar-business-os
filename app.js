@@ -1,4 +1,5 @@
 import { db } from './db.js';
+import { calculateFinancePolicy } from './finance-policy.js';
 import { analyzeProductLocally } from './analysis-engine.js';
 
 const sections = [
@@ -35,10 +36,10 @@ function empty(title,desc,action=''){return `<div class="empty-state"><div class
 function overview(){
  const products=scoped(state.products), posts=scoped(state.posts), activities=scoped(state.activities);
  const finance=financeTotals();
- const confirmed=finance.profit, fund=finance.fund;
+ const confirmed=finance.profit, fund=finance.maxNewGrowthSpend;
  header('Übersicht','UNTERNEHMENSSTEUERUNG');
  return `<div class="welcome-row"><div><h2>Guten Tag.</h2><p>Hier laufen deine Geschäftsbereiche und Produktionsprozesse zusammen.</p></div><span class="status-tag">● Lokale Datenhaltung aktiv</span></div>
- <div class="metric-grid">${card('Produkte',products.length,'im aktuellen Arbeitsbereich','◇')}${card('Content-Entwürfe',posts.length,'gespeicherte Beiträge','▤')}${card('Bestätigter Gewinn',money(confirmed),'noch keine Finanzdaten erfasst','€')}${card('KI-Fonds',money(fund),'Startguthaben: 0,00 €','✦')}</div>
+ <div class="metric-grid">${card('Produkte',products.length,'im aktuellen Arbeitsbereich','◇')}${card('Content-Entwürfe',posts.length,'gespeicherte Beiträge','▤')}${card('Bestätigter Gewinn',money(confirmed),'noch keine Finanzdaten erfasst','€')}${card('KI-Budget',money(fund),'2 % bestätigter Auszahlungen','✦')}</div>
  <div class="content-grid"><section class="panel"><div class="panel-head"><div><h3>Arbeitsbereich</h3><p>Aktiver Geschäftsbereich</p></div><span class="subtle">LOKAL</span></div><div class="workspace-summary"><div class="workspace-avatar">${esc((currentWorkspace()?.name||'N').slice(0,1).toUpperCase())}</div><div><strong>${esc(currentWorkspace()?.name||'Mein Unternehmen')}</strong><small>${esc(currentWorkspace()?.description||'Zentrale Arbeitsumgebung')}</small></div></div><div class="quick-grid"><button class="quick-action" data-go="products">＋ Produkt importieren</button><button class="quick-action" data-go="content">✦ Content erstellen</button><button class="quick-action" data-go="calendar">▦ Planung öffnen</button><button class="quick-action" data-go="analytics">⌁ Leistung prüfen</button></div></section>
  <section class="panel"><div class="panel-head"><div><h3>Letzte Aktivitäten</h3><p>Änderungen in diesem Arbeitsbereich</p></div></div>${activities.length?`<div class="activity-list">${activities.slice(0,5).map(a=>`<div class="activity"><span class="activity-dot"></span><div><strong>${esc(a.action)}</strong><small>${esc(a.detail)} · ${new Date(a.at).toLocaleString('de-DE')}</small></div></div>`).join('')}</div>`:empty('Noch keine Aktivitäten','Importe, Freigaben und Änderungen erscheinen hier.')}</section></div>
  <div class="notice"><strong>Technischer Status</strong><span>Dies ist das lokale Grundsystem. KI-Modelle, Affiliate-Schnittstellen, Veröffentlichung und automatische Finanzdaten werden erst nach Prüfung der jeweiligen kostenlosen und offiziell verfügbaren Integrationen ergänzt.</span></div>`;
@@ -450,17 +451,11 @@ const agentRoles=[
  ['finance','Finanz-Agent']
 ];
 function financeConfig(){
- return state.settings.find(x=>x.id==='finance-'+state.workspaceId)||{id:'finance-'+state.workspaceId,workspaceId:state.workspaceId,fundRate:0};
+ return state.settings.find(x=>x.id==='finance-'+state.workspaceId)||{id:'finance-'+state.workspaceId,workspaceId:state.workspaceId,seedCapital:20,protectedReserve:3};
 }
 function financeTotals(){
  const rows=state.financeTransactions.filter(x=>x.workspaceId===state.workspaceId);
- const income=rows.filter(x=>x.type==='income'&&x.confirmed).reduce((a,x)=>a+Number(x.amount||0),0);
- const expenses=rows.filter(x=>x.type==='expense'&&x.confirmed).reduce((a,x)=>a+Number(x.amount||0),0);
- const fund=rows.filter(x=>x.type==='fund_contribution').reduce((a,x)=>a+Number(x.amount||0),0);
- const rate=Math.max(0,Math.min(100,Number(financeConfig().fundRate)||0));
- const profit=income-expenses;
- const target=Math.max(0,profit)*rate/100;
- return {income,expenses,profit,fund,rate,available:Math.max(0,target-fund)};
+ return calculateFinancePolicy({transactions:rows,seedCapital:financeConfig().seedCapital,protectedReserve:financeConfig().protectedReserve});
 }
 function queueAgentTask({title,description='',role='orchestrator',priority='normal',relatedType='',relatedId=''}){
  const task={id:crypto.randomUUID(),workspaceId:state.workspaceId,title,description,role,priority,status:'queued',relatedType,relatedId,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),source:'workflow'};
@@ -484,8 +479,9 @@ function financePage(){
  const t=financeTotals(),rows=state.financeTransactions.filter(x=>x.workspaceId===state.workspaceId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
  return `<div class="page-toolbar"><div><h2>Finanzleitstand</h2><p>Nur bestätigte Buchungen zählen zu Gewinn und Fonds.</p></div><span class="status-tag">Ledger · lokal</span></div>
  <div class="metric-grid">${card('Bestätigte Einnahmen',money(t.income),'Affiliate-Provisionen usw.','€')}${card('Bestätigte Kosten',money(t.expenses),'erfasste Ausgaben','−')}${card('Nettosaldo',money(t.profit),'Einnahmen minus Kosten','∑')}${card('KI-Fonds',money(t.fund),'tatsächlich gebuchte Beiträge','✦')}</div>
- <section class="panel"><div class="panel-head"><div><h3>KI-Fonds-Regel</h3><p>Fondsanteil aus bestätigtem positivem Nettosaldo.</p></div></div><div class="form-grid"><label>Fondsanteil in Prozent<input id="fundRate" type="number" min="0" max="100" step="0.5" value="${t.rate}"></label><div class="detail-block"><span>Derzeit zusätzlich zuweisbar</span><strong>${money(t.available)}</strong></div></div><p class="form-hint">Standard ist 0 %. Du legst die Quote selbst fest. Zuweisungen werden erst nach deiner Aktion als eigene Fondsbuchung gespeichert. Keine automatische Abbuchung oder Zahlung.</p><div class="detail-actions"><button class="button button-secondary" id="saveFundRate">Fondsquote speichern</button><button class="button button-primary" id="allocateFund" ${t.available<=0?'disabled':''}>Verfügbaren Fondsanteil buchen</button></div></section>
- <section class="panel"><div class="panel-head"><div><h3>Buchung erfassen</h3><p>Einnahmen und Kosten manuell dokumentieren.</p></div></div><form id="financeEntryForm" class="data-form"><div class="form-grid"><label>Typ<select name="type"><option value="income">Einnahme</option><option value="expense">Kosten</option></select></label><label>Betrag in EUR<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00"></label></div><label>Quelle / Kategorie<input name="source" required maxlength="120" placeholder="z. B. Amazon PartnerNet Provision"></label><label>Beleg / Referenz (optional)<input name="evidence" maxlength="300" placeholder="Abrechnungs-ID, Exportname oder Notiz"></label><label class="inline-check"><input type="checkbox" name="confirmed"> Buchung ist durch Abrechnung oder Beleg bestätigt</label><button class="button button-primary" type="submit">Buchung speichern</button></form></section>
+ <section class="panel"><div class="panel-head"><div><h3>2-%-KI-Wachstumsbudget</h3><p>Nur bestätigte, tatsächlich ausgezahlte Affiliate-Provisionen speisen das Budget.</p></div><span class="status-tag">Fix 2 %</span></div><div class="metric-grid"><div class="detail-block"><span>Ausgezahlte Affiliate-Einnahmen</span><strong>${money(t.affiliateRevenue)}</strong></div><div class="detail-block"><span>2-%-Budget gesamt</span><strong>${money(t.growthBudgetTotal)}</strong></div><div class="detail-block"><span>Bereits verwendetes Budget</span><strong>${money(t.growthSpend)}</strong></div><div class="detail-block"><span>Jetzt maximal freigabefähig</span><strong>${money(t.maxNewGrowthSpend)}</strong></div></div><p class="form-hint">Nicht ausgegebenes Budget bleibt rechnerisch erhalten. Seed-Kapital und andere Einnahmen erzeugen kein KI-Wachstumsbudget.</p></section>
+ <section class="panel"><div class="panel-head"><div><h3>Liquiditäts- und Ausgabesperre</h3><p>Kein bezahlter Einsatz darf die geschützte Reserve unterschreiten.</p></div></div><div class="form-grid"><label>Einmaliges Startkapital (€)<input id="seedCapital" type="number" min="0" step="0.01" value="${t.seedCapital}"></label><label>Geschützte Mindestreserve (€)<input id="protectedReserve" type="number" min="0" step="0.01" value="${t.protectedReserve}"></label></div><div class="metric-grid"><div class="detail-block"><span>Rechnerischer Kassenbestand</span><strong>${money(t.cashBalance)}</strong></div><div class="detail-block"><span>Nach Reserve frei</span><strong>${money(t.spendableCash)}</strong></div><div class="detail-block"><span>Maximaler neuer KI-Einsatz</span><strong>${money(t.maxNewGrowthSpend)}</strong></div></div><p class="form-hint">${t.reserveProtected?'Reserve ist gedeckt.':'WARNUNG: Der Kassenbestand liegt unter der geschützten Reserve. Bezahlte Ausgaben sind gesperrt.'} Diese Prüfung ist eine lokale Ledger-Kontrolle, keine Bankbestätigung oder echte Zahlungsfreigabe.</p><button class="button button-secondary" id="saveFinancePolicy">Finanzregeln speichern</button></section>
+ <section class="panel"><div class="panel-head"><div><h3>Buchung erfassen</h3><p>Einnahmen und Kosten manuell dokumentieren.</p></div></div><form id="financeEntryForm" class="data-form"><div class="form-grid"><label>Typ<select name="type"><option value="income">Einnahme</option><option value="expense">Kosten</option></select></label><label>Betrag in EUR<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00"></label></div><label>Einnahmeart (nur bei Einnahme)<select name="incomeKind"><option value="other">Sonstige Einnahme</option><option value="affiliate_payout">Affiliate-Auszahlung tatsächlich erhalten</option></select></label><label>Kostenart (nur bei Kosten)<select name="costKind"><option value="operating">Betriebskosten</option><option value="growth">KI-/Wachstumsausgaben</option></select></label><label>Quelle / Kategorie<input name="source" required maxlength="120" placeholder="z. B. Amazon PartnerNet Auszahlung"></label><label>Beleg / Referenz (optional)<input name="evidence" maxlength="300" placeholder="Abrechnungs-ID, Exportname oder Notiz"></label><label class="inline-check"><input type="checkbox" name="confirmed"> Buchung ist durch Abrechnung oder Beleg bestätigt</label><button class="button button-primary" type="submit">Buchung speichern</button></form></section>
  <section class="panel"><div class="panel-head"><div><h3>Buchungsjournal</h3><p>${rows.length} Einträge · ausstehende Buchungen zählen nicht zum Nettosaldo.</p></div></div>${rows.length?`<div class="agent-task-list">${rows.map(x=>`<article class="agent-task"><div><strong>${x.type==='income'?'Einnahme':x.type==='expense'?'Kosten':'KI-Fonds-Zuweisung'} · ${money(x.amount)}</strong><p>${esc(x.source||'Fondsbeitrag')} · ${esc(x.evidence||'Kein Belegverweis')}</p><small>${new Date(x.createdAt).toLocaleString('de-DE')} · ${x.confirmed?'Bestätigt':'Ausstehend'}</small></div><span class="status-tag">${x.type==='fund_contribution'?'Gebucht':x.confirmed?'Bestätigt':'Offen'}</span></article>`).join('')}</div>`:empty('Noch keine Finanzbuchungen','Erfasse bestätigte Provisionen und tatsächlich angefallene Kosten.')}</section>
  <div class="notice"><strong>Finanzkontrolle</strong><span>Northstar liest noch keine Affiliate-Konten automatisch aus. Bis eine offizielle Schnittstelle eingerichtet ist, müssen Provisionen anhand deiner echten Abrechnungen eingetragen werden. Der Fonds ist eine interne Rücklage, kein Bankkonto.</span></div>`;
 }
@@ -500,17 +496,14 @@ async function updateAgentTask(id,status){
 }
 async function saveFinanceEntry(event){
  event.preventDefault();const d=new FormData(event.currentTarget),amount=Number(d.get('amount'));if(!Number.isFinite(amount)||amount<=0){toast('Bitte einen gültigen Betrag eingeben.');return;}
- const type=String(d.get('type'));const row={id:crypto.randomUUID(),workspaceId:state.workspaceId,type,amount:Number(amount.toFixed(2)),source:String(d.get('source')||'').trim(),evidence:String(d.get('evidence')||'').trim(),confirmed:d.get('confirmed')==='on',createdAt:new Date().toISOString()};
+ const type=String(d.get('type'));const row={id:crypto.randomUUID(),workspaceId:state.workspaceId,type,amount:Number(amount.toFixed(2)),incomeKind:type==='income'?String(d.get('incomeKind')||'other'):'',costKind:type==='expense'?String(d.get('costKind')||'operating'):'',source:String(d.get('source')||'').trim(),evidence:String(d.get('evidence')||'').trim(),confirmed:d.get('confirmed')==='on',createdAt:new Date().toISOString()};
  state.financeTransactions.unshift(row);await db.put('financeTransactions',row);log('Finanzbuchung erfasst',(type==='income'?'Einnahme':'Kosten')+' · '+money(amount));renderPage();toast('Finanzbuchung gespeichert.');
 }
-async function saveFundRate(){
- const input=$('#fundRate'),rate=Number(input?.value);if(!Number.isFinite(rate)||rate<0||rate>100){toast('Fondsquote muss zwischen 0 und 100 % liegen.');return;}
- const cfg={...financeConfig(),fundRate:rate,updatedAt:new Date().toISOString()};state.settings=state.settings.filter(x=>x.id!==cfg.id);state.settings.push(cfg);await db.put('settings',cfg);log('KI-Fondsquote geändert',rate+' %');renderPage();toast('Fondsquote gespeichert.');
-}
-async function allocateFund(){
- const t=financeTotals();if(t.available<=0){toast('Kein verfügbarer bestätigter Fondsanteil.');return;}
- const row={id:crypto.randomUUID(),workspaceId:state.workspaceId,type:'fund_contribution',amount:Number(t.available.toFixed(2)),source:'Interne KI-Fonds-Zuweisung',evidence:'Aus bestätigtem Nettosaldo; Quote '+t.rate+' %',confirmed:true,createdAt:new Date().toISOString()};
- state.financeTransactions.unshift(row);await db.put('financeTransactions',row);log('KI-Fonds dotiert',money(row.amount));renderPage();toast('Fondsbeitrag gebucht.');
+async function saveFinancePolicy(){
+ const seedCapital=Number($('#seedCapital')?.value),protectedReserve=Number($('#protectedReserve')?.value);
+ if(!Number.isFinite(seedCapital)||seedCapital<0||!Number.isFinite(protectedReserve)||protectedReserve<0){toast('Startkapital und Reserve müssen gültige positive Werte sein.');return;}
+ const cfg={...financeConfig(),seedCapital:Number(seedCapital.toFixed(2)),protectedReserve:Number(protectedReserve.toFixed(2)),updatedAt:new Date().toISOString()};
+ state.settings=state.settings.filter(x=>x.id!==cfg.id);state.settings.push(cfg);await db.put('settings',cfg);log('Finanzregeln geändert','Startkapital '+money(cfg.seedCapital)+' · Reserve '+money(cfg.protectedReserve));renderPage();toast('Finanzregeln gespeichert.');
 }
 
 function simplePage(id){
@@ -549,7 +542,7 @@ function renderPage(){
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
- $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFundRate')?.addEventListener('click',saveFundRate);$('#allocateFund')?.addEventListener('click',allocateFund);
+ $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFinancePolicy')?.addEventListener('click',saveFinancePolicy);
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);

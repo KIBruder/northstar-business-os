@@ -12,9 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Run finance policy tests
+        run: npm test
       - name: Check JavaScript syntax
         run: |
           node --check app.js
+          node --check finance-policy.js
           node --check db.js
           node --check analysis-engine.js
           node --check sw.js
