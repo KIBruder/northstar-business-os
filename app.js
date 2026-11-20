@@ -258,7 +258,7 @@ function buildProductCreative(product){
  }else if(/küche|kochen|kaffee|pfanne|messer|staubsauger|haushalt/i.test(lower)){
   category='home';hook='Wäre das ein praktisches Upgrade für zuhause?';benefit='Schau dir Form und Handhabung an';question='Würde dir das den Alltag erleichtern?';scenes=['A candid everyday kitchen or home photo featuring the exact product.','A close smartphone photo of the exact product and only accessories shown in the reference.','A natural in-use home scene featuring the same exact product.'];visibleCue='the exact product shape, materials, controls and visible components';
  }
- return {name,category,hook,benefit,question,scenes,facts,visibleCue,cta:'Produktdetails beim Händler prüfen'};
+ return {name,category,hook,benefit,bridge:benefit,question,scenes,facts,visibleCue,cta:'Link öffnen und Details prüfen'};
 }
 function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creative){
  return new Promise((resolve,reject)=>{
@@ -311,7 +311,7 @@ async function generateSlideImages(postId){
  const verifiedPrice=product.price!==null&&product.price!==undefined&&product.price!==''&&Boolean(product.priceVerified);
  const creative=buildProductCreative(product);
  try{
-  const referenceImages=await Promise.all(referenceSources.map(prepareFluxReferenceImage));
+  const primaryReference=await prepareFluxReferenceImage(referenceSources[0]);
   for(let i=0;i<3;i++){
    if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert – Originalreferenz wird einzeln geschützt …';
    const slide=post.draft.slides[i]||{};
@@ -323,7 +323,7 @@ async function generateSlideImages(postId){
      'SLIDE 3 / CTA LIFESTYLE: '+creative.scenes[2]+' Product must be the same exact item as slide 1 and slide 2. New setting is allowed; product redesign is forbidden.'
     ];
    // The image model may change the scene, but the reference product identity must remain exact.
-   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:[referenceImages[selectedIndex]]})});
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:[primaryReference]})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
    if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
@@ -370,7 +370,7 @@ async function generateContentDraft(postId){
  const creative=buildProductCreative(product);
  const slides=[
   {role:'1 · Hook / Scroll-Stopper',headline:creative.hook,body:'Wisch weiter – im nächsten Bild siehst du die relevanten Produktdetails.',visualNote:'Authentischer iPhone-POV-/Reaction-Einstieg. Das Originalprodukt muss groß und unverändert erkennbar sein.',imagePrompt:'Strict image-to-image reference edit. Preserve the exact product identity, construction, colors, logos, dimensions and visible details. Candid iPhone 12 photo, 8:9, no text, no invented parts.'},
-  {role:'2 · Produkt / Nutzen',headline:'Darauf kommt es bei '+title+' an',body:creative.bridge+' '+(verifiedDescription?facts:'Keine technischen Eigenschaften als gesichert darstellen; sichtbare Details und Lieferumfang prüfen.'),visualNote:'Alltagssituation passend zur Produktkategorie; nur Details zeigen, die in der Referenz tatsächlich vorhanden sind. Keine automatisch platzierten Pfeile.',imagePrompt:'Strict image-to-image reference edit. Show the exact product in a plausible everyday context without changing its physical details or inventing features.'},
+  {role:'2 · Produkt / Nutzen',headline:creative.benefit,body:creative.bridge+' '+(verifiedDescription?facts:'Keine technischen Eigenschaften als gesichert darstellen; sichtbare Details und Lieferumfang prüfen.'),visualNote:'Alltagssituation passend zur Produktkategorie; nur Details zeigen, die in der Referenz tatsächlich vorhanden sind. Keine automatisch platzierten Pfeile.',imagePrompt:'Strict image-to-image reference edit. Show the exact product in a plausible everyday context without changing its physical details or inventing features.'},
   {role:'3 · BOFU / Kommentar-CTA',headline:creative.question,body:priceText+' '+sourceText+' '+creative.cta,visualNote:'Klare Abschlussaufnahme des Originalprodukts. Aktuellen Preis nur verwenden, wenn er nachweislich geprüft wurde.',imagePrompt:'Strict image-to-image reference edit. Keep exact product unchanged, authentic smartphone photo, clean space for short CTA. No fabricated price, discount or specifications.'}
  ];
  setStep(2,48);await new Promise(r=>setTimeout(r,100));
