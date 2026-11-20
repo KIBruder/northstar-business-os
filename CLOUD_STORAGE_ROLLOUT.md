@@ -27,3 +27,32 @@ The migration in `migrations/0001_northstar_core.sql` creates tenant-scoped tabl
 - Do not delete IndexedDB or local browser data during rollout.
 - Enable cloud sync only after authenticated API tests, backup/restore tests, conflict handling, and cross-browser verification pass.
 - On first login, initialize a clean cloud workspace. Local browser records remain isolated until the user explicitly chooses to import selected records.
+
+## Worker API implementation
+The Worker exposes `GET /api/sync?workspaceId=<id>` and `POST /api/sync` after the D1 binding and Cloudflare Access JWT settings are configured. The endpoint validates the RS256 Access assertion against the configured issuer, audience, expiry, and JWKS key, then derives the tenant key from the verified `sub` claim. The browser cannot choose or override the tenant identity.
+
+- `GET` returns only live records belonging to the verified subject and requested workspace.
+- `POST` accepts up to 500 records per batch, verifies workspace ownership, validates JSON payload size, and performs tenant-keyed upserts.
+- The endpoint is deliberately unavailable until `DB`, `ACCESS_TEAM_DOMAIN`, and `ACCESS_AUD` are configured.
+- No browser client sync is enabled in this phase. The local IndexedDB remains the active app data store until the login flow and cross-origin Access session are proven on iOS Safari and desktop browsers.
+
+## Deploy commands (after creating D1)
+Run from `cloudflare-worker/` in a trusted local terminal with Wrangler authenticated:
+```sh
+npx wrangler d1 create northstar-production
+# Add the returned database_id to wrangler.toml under [[d1_databases]] with binding = "DB".
+npx wrangler d1 migrations apply northstar-production --remote
+npx wrangler secret put ACCESS_AUD
+npx wrangler secret put ACCESS_TEAM_DOMAIN
+npx wrangler deploy
+```
+Set `ACCESS_AUD` to the Access application's audience tag. Set `ACCESS_TEAM_DOMAIN` to the exact Cloudflare Access team issuer origin, for example `https://<team-name>.cloudflareaccess.com` (no trailing slash). Configure the Access application to protect the Worker hostname and permit only the intended owner account. Do not paste secret values into GitHub, chat, or source files.
+
+## Verification before client cutover
+1. Anonymous GET/POST returns 401.
+2. Authenticated owner can create and read a workspace.
+3. A second identity cannot read or modify the first identity's rows.
+4. A child record cannot be written into a workspace owned by another identity.
+5. Invalid signature, wrong audience, expired token, and wrong issuer are rejected.
+6. D1 backup/export and restore are tested.
+7. Access cookies/session work from iOS Safari and desktop browser for the GitHub Pages origin.
