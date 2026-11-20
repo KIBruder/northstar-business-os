@@ -540,6 +540,74 @@ async function saveFinancePolicy(){
  state.settings=state.settings.filter(x=>x.id!==cfg.id);state.settings.push(cfg);await db.put('settings',cfg);log('Finanzregeln geändert','Startkapital '+money(cfg.seedCapital)+' · Reserve '+money(cfg.protectedReserve));renderPage();toast('Finanzregeln gespeichert.');
 }
 
+
+function settingsPage(){
+ header('Einstellungen','KONTO · CLOUD-SYNCHRONISIERUNG');
+ const email=localStorage.getItem('northstar_account_email')||'';
+ const token=localStorage.getItem('northstar_session_token')||'';
+ const base=localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';
+ return `<div class="page-toolbar"><div><h2>Northstar-Konto</h2><p>Eigenes Konto statt Cloudflare Zero Trust. Deine Daten bleiben zusätzlich lokal auf diesem Gerät.</p></div><span class="status-tag">${token?'Sitzung gespeichert':'Nicht angemeldet'}</span></div>
+ <section class="panel"><div class="panel-head"><div><h3>${token?'Angemeldet':'Konto erstellen oder anmelden'}</h3><p>${token?esc(email):'E-Mail-Adresse und ein Passwort mit mindestens 12 Zeichen verwenden.'}</p></div></div>
+ <form id="accountForm" class="data-form" ${token?'hidden':''}><label>E-Mail-Adresse<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label>Passwort<input name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128"></label><div class="form-actions"><button class="button button-secondary" type="button" id="accountLogin">Anmelden</button><button class="button button-primary" type="submit">Konto erstellen</button></div></form>
+ <div class="detail-actions" ${token?'':'hidden'}><button class="button button-secondary" id="accountLogout">Abmelden</button></div>
+ <p class="form-hint">Hinweis: Das Passwort wird nicht lokal gespeichert. Northstar speichert serverseitig nur einen PBKDF2-Hash. Die Sitzung läuft nach 7 Tagen ab.</p></section>
+ <section class="panel"><div class="panel-head"><div><h3>Cloud-Synchronisierung</h3><p>Überträgt deine Arbeitsbereiche und Geschäftsdaten in deine private D1-Datenbank.</p></div><span class="status-tag">D1 · verschlüsselte HTTPS-Verbindung</span></div>
+ <label class="data-form">Worker-Adresse<input id="syncEndpoint" type="url" value="${esc(base)}" placeholder="https://…workers.dev"></label>
+ <div class="detail-actions"><button class="button button-primary" id="saveSyncEndpoint">Adresse speichern</button><button class="button button-secondary" id="syncNow" ${token?'':'disabled'}>Jetzt synchronisieren</button></div><div id="syncStatus" class="form-hint" aria-live="polite">${token?'Bereit zur Synchronisierung.':'Bitte zuerst anmelden.'}</div></section>
+ <div class="notice"><strong>Datenschutz</strong><span>Die Synchronisierung startet nur auf Knopfdruck. Vor dem ersten Einsatz müssen die Authentifizierungs-Migration und das geheime Signaturschlüssel-Setting im Cloudflare Worker eingerichtet sein. Teile dein Passwort oder den Sitzungstoken niemals.</span></div>`;
+}
+async function accountRequest(path,body){
+ const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
+ const response=await fetch(base+'/api/auth/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const payload=await response.json();
+ if(!response.ok)throw new Error(payload.error||'Anmeldung fehlgeschlagen.');
+ return payload;
+}
+async function loginAccount(){
+ const form=$('#accountForm');const data=new FormData(form);
+ try{const payload=await accountRequest('login',{email:data.get('email'),password:data.get('password')});storeAccount(payload);renderPage();toast('Angemeldet.');}
+ catch(error){toast(error.message);}
+}
+function storeAccount(payload){localStorage.setItem('northstar_session_token',payload.token);localStorage.setItem('northstar_account_email',payload.user.email);localStorage.setItem('northstar_account_id',payload.user.id);}
+async function registerAccount(event){
+ event.preventDefault();const data=new FormData(event.currentTarget);
+ try{const payload=await accountRequest('register',{email:data.get('email'),password:data.get('password')});storeAccount(payload);renderPage();toast('Konto erstellt und angemeldet.');}
+ catch(error){toast(error.message);}
+}
+function logoutAccount(){localStorage.removeItem('northstar_session_token');localStorage.removeItem('northstar_account_email');localStorage.removeItem('northstar_account_id');renderPage();toast('Abgemeldet.');}
+async function syncAllData(){
+ const token=localStorage.getItem('northstar_session_token');if(!token)throw new Error('Bitte zuerst anmelden.');
+ const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
+ const headers={'Content-Type':'application/json','Authorization':'Bearer '+token};
+ const stores=['workspaces','products','posts','activities','agentTasks','financeTransactions','settings'];
+ const local={};for(const store of stores)local[store]=await db.all(store);
+ for(const workspace of local.workspaces){
+  const response=await fetch(base+'/api/sync?workspaceId='+encodeURIComponent(workspace.id),{headers});
+  const remote=await response.json();if(!response.ok)throw new Error(remote.error||'Cloud-Daten konnten nicht geladen werden.');
+  for(const store of stores){
+   const remoteRows=remote.stores?.[store]||[];
+   const localRows=store==='workspaces'?[workspace]:local[store].filter(item=>item.workspaceId===workspace.id);
+   const merged=new Map();
+   for(const item of [...remoteRows,...localRows]){
+    const prior=merged.get(item.id);
+    const stamp=x=>Date.parse(x.updatedAt||x.createdAt||'1970-01-01')||0;
+    if(!prior||stamp(item)>=stamp(prior))merged.set(item.id,item);
+   }
+   const rows=[...merged.values()];
+   for(const item of rows)await db.put(store,item);
+   const records=rows.filter(item=>store==='workspaces'||item.workspaceId===workspace.id).map(item=>({store,item}));
+   if(records.length){
+    const saved=await fetch(base+'/api/sync',{method:'POST',headers,body:JSON.stringify({records})});
+    const result=await saved.json();if(!saved.ok)throw new Error(result.error||'Cloud-Speicherung fehlgeschlagen.');
+   }
+  }
+ }
+ for(const store of stores)state[store]=await db.all(store);
+ state.workspaceId=state.workspaces[0]?.id||state.workspaceId;
+ renderWorkspaceSelect();renderPage();
+ return 'Synchronisierung abgeschlossen. '+stores.reduce((sum,store)=>sum+state[store].length,0)+' Datensätze lokal und in D1 abgeglichen.';
+}
+
 function simplePage(id){
  if(id==='agents')return agentsPage();if(id==='finance')return financePage();
  const [title,eyebrow,desc,note]=simplePages[id]; header(title,eyebrow);
