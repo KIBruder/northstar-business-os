@@ -173,9 +173,76 @@ function contentDetail(post,product){
   <div class="detail-block"><span>Video-Generierungs-Prompt</span><p>${esc(draft.videoPrompt||'')}</p></div>
   <div class="detail-block"><span>Caption</span><p>${esc(draft.caption)}</p></div>
   <div class="detail-block"><span>Hashtags</span><p>${draft.hashtags.map(esc).join(' ')}</p></div>
+  <section class="media-generation-panel">
+   <div class="panel-head"><div><h3>KI-Bildproduktion</h3><p>Drei echte 8:9-Slides mit Produktreferenz erzeugen.</p></div><span class="status-tag">OpenAI Images API</span></div>
+   <div class="media-connection-grid">
+    <label>Northstar-Generator-Endpunkt<input id="mediaEndpoint" type="url" placeholder="https://dein-worker.example.workers.dev/api/generate-image"></label>
+    <label>Worker-Zugriffstoken<input id="mediaToken" type="password" autocomplete="off" placeholder="Zugriffstoken"></label>
+   </div>
+   <p class="form-hint">Der OpenAI-API-Schlüssel bleibt ausschließlich als Cloudflare-Secret auf dem Worker. Hier wird nur die geschützte Worker-Verbindung gespeichert.</p>
+   <div class="detail-actions"><button class="button button-secondary" id="saveMediaSettings">Verbindung speichern</button><button class="button button-primary" id="generateSlideImages" data-id="${post.id}">✦ 3 Slides jetzt generieren</button></div>
+   <div id="mediaGenerationStatus" class="form-hint" aria-live="polite">${draft.generatedSlides?.length||0} von 3 Slides gespeichert.</div>
+   ${generatedSlidesMarkup(draft)}
+  </section>
   <div class="detail-actions"><button class="button button-secondary" id="copyContentDraft">Gesamtes Produktionspaket kopieren</button><button class="button button-primary" id="regenerateContentDraft" data-id="${post.id}">Paket neu erstellen</button></div>
   `:`<div class="empty-state compact"><h3>Noch kein Produktionspaket</h3><p>Erstelle aus dem Produkt einen BOFU-Beitrag mit drei Slides, Voiceover, Szenenplan, Bildprompts, Caption und Hashtags.</p><button class="button button-primary" id="generateContentDraft" data-id="${post.id}">✦ BOFU-Produktionspaket erstellen</button></div>`}
  </section>`;
+}
+function generatedSlidesMarkup(draft){
+ const slides=draft.generatedSlides||[];
+ if(!slides.length)return '';
+ return '<div class="generated-slide-grid">'+slides.map((item,i)=>'<article class="generated-slide-card"><img src="'+item.dataUrl+'" alt="Generierter Slide '+(i+1)+'"><strong>Slide '+(i+1)+'</strong><a class="button button-secondary" href="'+item.dataUrl+'" download="northstar-slide-'+(i+1)+'.png">Bild speichern</a></article>').join('')+'</div>';
+}
+function saveMediaSettings(){
+ const endpoint=$('#mediaEndpoint')?.value.trim()||'',token=$('#mediaToken')?.value.trim()||'';
+ if(!/^https:\/\//i.test(endpoint)||!token){toast('Bitte HTTPS-Worker-Adresse und Zugriffstoken eintragen.');return;}
+ localStorage.setItem('northstar_media_endpoint',endpoint);
+ localStorage.setItem('northstar_media_token',token);
+ toast('Generator-Verbindung lokal gespeichert.');
+}
+function cropImageToEightNinths(dataUrl){
+ return new Promise((resolve,reject)=>{
+  const img=new Image();img.onload=()=>{
+   const ratio=8/9,source=img.width/img.height;let sx=0,sy=0,sw=img.width,sh=img.height;
+   if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
+   else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
+   const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=1152;
+   const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas nicht verfügbar.'));return;}
+   ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);resolve(canvas.toDataURL('image/png'));
+  };img.onerror=()=>reject(new Error('Bild konnte nicht verarbeitet werden.'));img.src=dataUrl;
+ });
+}
+async function generateSlideImages(postId){
+ const post=state.posts.find(x=>x.id===postId&&x.workspaceId===state.workspaceId);
+ const product=post&&state.products.find(x=>x.id===post.productId&&x.workspaceId===state.workspaceId);
+ if(!post?.draft||!product){toast('Zuerst ein BOFU-Produktionspaket erstellen.');return;}
+ const endpoint=String(localStorage.getItem('northstar_media_endpoint')||'').trim();
+ const token=String(localStorage.getItem('northstar_media_token')||'').trim();
+ if(!endpoint||!token){toast('Bitte zuerst Worker-Verbindung speichern.');return;}
+ const images=[product.imageDataUrl,...(product.screenshotDataUrls||[])].filter(x=>typeof x==='string'&&x.startsWith('data:image/')).slice(0,8);
+ if(!images.length){toast('Kein gespeichertes Produktbild gefunden.');return;}
+ const button=$('#generateSlideImages'),status=$('#mediaGenerationStatus');
+ if(button){button.disabled=true;button.textContent='Generierung läuft …';}
+ post.draft.generatedSlides=post.draft.generatedSlides||[];
+ try{
+  for(let i=0;i<post.draft.slides.length;i++){
+   if(status)status.textContent='Slide '+(i+1)+' von 3 wird generiert …';
+   const slide=post.draft.slides[i];
+   const prompt='Create one premium but authentic TikTok Shop product-slide image in portrait 8:9 composition. Treat all supplied photos as strict identity references for the exact product. Preserve its original shape, color, branding, seams, pockets, zippers and proportions. Product: '+product.name+'. Slide role: '+slide.role+'. Visual direction: '+slide.imagePrompt+' Style: clean iPhone product photography, realistic natural light, understated neutral background, product dominant. No collage, watermark, invented claims, price or text rendered inside the image.';
+   const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt,images,aspectRatio:'8:9'})});
+   const payload=await response.json().catch(()=>({}));
+   if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
+   if(!payload.imageDataUrl)throw new Error('Worker hat keine Bilddatei zurückgegeben.');
+   const finalImage=await cropImageToEightNinths(payload.imageDataUrl);
+   post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'gpt-image-2.6-flare',aspectRatio:'8:9'};
+   await db.put('posts',post);
+  }
+  post.draft.productionStatus='Drei generierte 8:9-Bilddateien lokal gespeichert. Produktdetails und Preis vor Veröffentlichung weiterhin prüfen.';
+  post.status='Bilder generiert – Freigabe offen';post.updatedAt=new Date().toISOString();
+  await db.put('posts',post);log('Drei BOFU-Slides generiert',post.title);
+  state.selectedPostId=post.id;renderPage();toast('Drei Slides in Northstar gespeichert.');
+ }catch(error){if(status)status.textContent='Abbruch: '+error.message;toast('Bildgenerierung fehlgeschlagen: '+error.message);}
+ finally{const current=$('#generateSlideImages');if(current){current.disabled=false;current.textContent='✦ 3 Slides jetzt generieren';}}
 }
 async function handlePostAction(action,id){
  const post=state.posts.find(x=>x.id===id && x.workspaceId===state.workspaceId);if(!post)return;
@@ -276,9 +343,13 @@ function renderPage(){
  $('#addPost')?.addEventListener('click',addPost); $('#addPostEmpty')?.addEventListener('click',addPost);
  document.querySelectorAll('[data-post-action]').forEach(b=>b.addEventListener('click',()=>handlePostAction(b.dataset.postAction,b.dataset.id)));
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
+ if($('#mediaEndpoint'))$('#mediaEndpoint').value=localStorage.getItem('northstar_media_endpoint')||'';
+ if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
  $('#generateContentDraft')?.addEventListener('click',()=>generateContentDraft(state.selectedPostId));
  $('#regenerateContentDraft')?.addEventListener('click',e=>generateContentDraft(e.currentTarget.dataset.id));
  $('#copyContentDraft')?.addEventListener('click',copyContentDraft);
+ $('#saveMediaSettings')?.addEventListener('click',saveMediaSettings);
+ $('#generateSlideImages')?.addEventListener('click',e=>generateSlideImages(e.currentTarget.dataset.id));
 }
 function classifyProductUrl(raw){
  let u;
