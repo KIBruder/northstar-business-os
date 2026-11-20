@@ -5,6 +5,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT NOT NULL,
   owner_sub TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
