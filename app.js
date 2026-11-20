@@ -26,7 +26,7 @@ function log(action, detail=''){ state.activities.unshift({id:crypto.randomUUID(
 function navMarkup(items){return items.map(([id,label,icon])=>`<button class="nav-item ${active===id?'active':''}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');}
 function renderNav(){
   $('#sideNav').innerHTML = `<div class="nav-group-label">ARBEITSPLATZ</div>${navMarkup(sections.slice(0,5))}<div class="nav-group-label">STEUERUNG</div>${navMarkup(sections.slice(5,11))}<div class="nav-group-label">SYSTEM</div>${navMarkup(sections.slice(11))}`;
-  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[5],sections[11]]);
+  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[6],sections[5],sections[11]]);
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.nav)));
 }
 function go(id){active=id;renderNav();renderPage();$('#sideNav').classList.remove('open');}
