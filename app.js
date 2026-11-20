@@ -263,7 +263,7 @@ async function requestProductAIAnalysis(product,referenceSources=null){
 function buildProductCreative(product){
  const ai=product?.aiCreative||{};
  const name=String(ai.productName||product?.name||'dieses Produkt').trim();
- const facts=String(ai.verifiedVisibleFeatures||product?.description||'').trim().slice(0,700);
+ const facts=String(ai.visibleFeatures||product?.description||'').trim().slice(0,700);
  const scenes=Array.isArray(ai.slideScenes)&&ai.slideScenes.length>=3?ai.slideScenes.slice(0,3):[
   'Authentisches Smartphone-Foto: Das exakte Originalprodukt ist sofort groß und klar erkennbar, in einer plausiblen Alltagssituation passend zu seiner tatsächlichen Verwendung.',
   'Produktdetail-Aufnahme des exakten Originalprodukts. Zeige die wichtigsten tatsächlich sichtbaren Merkmale und die reale Bauform aus den Referenzbildern.',
