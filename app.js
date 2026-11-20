@@ -203,7 +203,7 @@ function saveMediaSettings(){
 function prepareFluxReferenceImage(dataUrl){
  return new Promise((resolve,reject)=>{
   const img=new Image();img.onload=()=>{
-   const maxEdge=512,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
+   const maxEdge=510,scale=Math.min(1,maxEdge/Math.max(img.naturalWidth||img.width,img.naturalHeight||img.height));
    const width=Math.max(1,Math.round((img.naturalWidth||img.width)*scale)),height=Math.max(1,Math.round((img.naturalHeight||img.height)*scale));
    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
    const ctx=canvas.getContext('2d');if(!ctx){reject(new Error('Canvas für Referenzbild nicht verfügbar.'));return;}
