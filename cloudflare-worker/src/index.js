@@ -92,7 +92,7 @@ async function syncApi(request, env, cors) {
  let subject;
  try { subject = await verifyAccessJwt(request,env); }
  catch (error) { return json({error:'Cloudflare Access Anmeldung fehlt oder ist ungültig.'},401,cors); }
- const db = db || env.db;
+ const db = env.DB || env.db;
  if (!db) return json({error:'D1-Binding DB/db ist nicht konfiguriert.'},503,cors);
  try {
   if (request.method === 'GET') {
