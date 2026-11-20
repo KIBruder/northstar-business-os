@@ -144,7 +144,7 @@ async function verifyAccessJwt(request,env) {
  const header=decodePart(parts[0]), claims=decodePart(parts[1]);
  if(header.alg!=='RS256'||!header.kid) throw new Error('Unsupported JWT algorithm');
  const now=Math.floor(Date.now()/1000);
- if(claims.iss!==team+'/') throw new Error('Invalid issuer');
+ if(claims.iss!==team) throw new Error('Invalid issuer');
  const aud=Array.isArray(claims.aud)?claims.aud:[claims.aud];
  if(!aud.includes(audience)) throw new Error('Invalid audience');
  if(!claims.sub||!claims.exp||claims.exp<=now||(claims.nbf&&claims.nbf>now)) throw new Error('Invalid token timing or subject');
