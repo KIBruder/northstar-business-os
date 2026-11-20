@@ -643,6 +643,11 @@ function renderPage(){
  $('#closeContentDetail')?.addEventListener('click',()=>{state.selectedPostId=null;renderPage();});
  if($('#mediaEndpoint'))$('#mediaEndpoint').value=normalizeMediaEndpoint(localStorage.getItem('northstar_media_endpoint')||'https://northstar-image-generator.kibruder.workers.dev');
  if($('#mediaToken'))$('#mediaToken').value=localStorage.getItem('northstar_media_token')||'';
+ $('#accountForm')?.addEventListener('submit',registerAccount);
+ $('#accountLogin')?.addEventListener('click',loginAccount);
+ $('#accountLogout')?.addEventListener('click',logoutAccount);
+ $('#saveSyncEndpoint')?.addEventListener('click',()=>{const value=String($('#syncEndpoint')?.value||'').trim().replace(/\/$/,'');try{const url=new URL(value);if(url.protocol!=='https:')throw new Error();localStorage.setItem('northstar_sync_endpoint',value);toast('Worker-Adresse gespeichert.');}catch{toast('Bitte eine gültige HTTPS-Worker-Adresse eingeben.');}});
+ $('#syncNow')?.addEventListener('click',async()=>{const status=$('#syncStatus');status.textContent='Synchronisierung läuft …';try{status.textContent=await syncAllData();toast('Daten synchronisiert.');}catch(error){status.textContent=error.message;toast(error.message);}});
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
  $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFinancePolicy')?.addEventListener('click',saveFinancePolicy);
