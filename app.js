@@ -34,7 +34,8 @@ function card(label,value,meta,icon='•'){return `<article class="metric-card">
 function empty(title,desc,action=''){return `<div class="empty-state"><div class="empty-icon">◇</div><h3>${title}</h3><p>${desc}</p>${action}</div>`;}
 function overview(){
  const products=scoped(state.products), posts=scoped(state.posts), activities=scoped(state.activities);
- const finance=financeTotals();\n const confirmed=finance.profit, fund=finance.fund;
+ const finance=financeTotals();
+ const confirmed=finance.profit, fund=finance.fund;
  header('Übersicht','UNTERNEHMENSSTEUERUNG');
  return `<div class="welcome-row"><div><h2>Guten Tag.</h2><p>Hier laufen deine Geschäftsbereiche und Produktionsprozesse zusammen.</p></div><span class="status-tag">● Lokale Datenhaltung aktiv</span></div>
  <div class="metric-grid">${card('Produkte',products.length,'im aktuellen Arbeitsbereich','◇')}${card('Content-Entwürfe',posts.length,'gespeicherte Beiträge','▤')}${card('Bestätigter Gewinn',money(confirmed),'noch keine Finanzdaten erfasst','€')}${card('KI-Fonds',money(fund),'Startguthaben: 0,00 €','✦')}</div>
