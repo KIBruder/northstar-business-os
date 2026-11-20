@@ -236,29 +236,42 @@ function buildProductCreative(product){
  const name=String(product?.name||'dieses Produkt').trim();
  const description=String(product?.description||'').trim();
  const lower=(name+' '+description).toLowerCase();
- const usableDescription=description.length>15&&!/(?:\b5g\b|\b4g\b|\blte\b|\d{1,2}:\d{2}|©|[<>]{1,}|kostenloser versand|lieferung bis)/i.test(description);
+ const usableDescription=description.length>15&&!/(?:\\b5g\\b|\\b4g\\b|\\blte\\b|\\d{1,2}:\\d{2}|©|[<>]{1,}|kostenloser versand|lieferung bis)/i.test(description);
  const facts=usableDescription?description.slice(0,420):'';
- let category='general',hook='POV: Dieses Produkt ist dir aufgefallen?',bridge='Schau dir Verarbeitung, Details und Lieferumfang genauer an. →',question='Wofür würdest du es nutzen?',scene='A believable everyday situation relevant to this exact product category.';
- if(/jacke|fleece|mantel|hoodie|parka|weste|coat|jacket/.test(lower)){
-  category='apparel';hook='POV: Du suchst eine Jacke für den Alltag?';bridge='Achte auf Futter, Taschen, Verschlüsse und Passform. →';question='Würdest du diese Jacke im Alltag tragen?';scene='A casual real-life clothing moment with the exact jacket laid out or held naturally; do not put it on a body or stretch the fabric, and keep its original silhouette and construction clearly shown.';
+ let category='general',hook='POV: Dieses Produkt könnte genau das Richtige sein',bridge='Schau dir die Details und die Verarbeitung genauer an',question='Wäre das etwas für deinen Alltag?',scenes=[
+  'A candid iPhone mirror selfie or natural handheld lifestyle photo featuring the exact product, as a believable user-generated social post.',
+  'A casual top-down flat lay showing the exact product and only variants or accessories visibly supported by the reference photos.',
+  'A close-up or natural in-use scene that makes the exact product easy to recognize.'
+ ];
+ if(/jacke|fleece|mantel|hoodie|parka|weste|coat|jacket|pullover|sweatshirt|hose|shirt/.test(lower)){
+  category='apparel';hook='Bevor du viel Geld für dieses Teil ausgibst …';bridge='So sieht das Teil getragen aus – achte auf Schnitt und Details';question='Würdest du es so kombinieren?';
+  scenes=['A realistic full-body or mirror selfie in a casual room or hallway, a person naturally wearing the exact garment from the reference. Keep garment shape, color, panels, seams, logo and pocket placement faithful.','A casual top-down floor or bed flat lay of the exact garment. If multiple color variants are actually visible in the supplied references, show those exact variants together; never invent extra colors or duplicate variants.','A natural close-up or second mirror-selfie angle showing the garment being worn. Make fabric texture, fit and construction plausible and faithful to the reference.'];
  }else if(/bohrer|schrauber|werkzeug|säge|fräse|zange|schleifer|tool|drill/.test(lower)){
-  category='tools';hook='POV: Das nächste Projekt wartet schon?';bridge='Prüfe Handhabung, Anschlüsse und den tatsächlichen Lieferumfang. →';question='Für welches Projekt würdest du es einsetzen?';scene='A believable home workshop or DIY setting, with the exact tool clearly visible and no invented accessories.';
+  category='tools';hook='Bevor du das nächste Projekt startest …';bridge='Schau dir Werkzeug, Anschlüsse und Lieferumfang an';question='Für welches Projekt wäre es praktisch?';
+  scenes=['A believable DIY user-generated photo in a home workshop with the exact tool clearly visible.','A casual flat lay of the exact tool and only accessories confirmed by the references.','A close-up of the exact tool in a plausible use situation, with no invented controls or attachments.'];
  }else if(/kopfhörer|headset|lautsprecher|mikrofon|speaker|earbuds/.test(lower)){
-  category='audio';hook='POV: Du willst dein Audio-Setup verbessern?';bridge='Achte auf Tragekomfort, Anschlüsse und Kompatibilität. →';question='Musik, Gaming oder Arbeit – wofür wäre es bei dir?';scene='A natural desk, commute or listening setting appropriate to the exact audio product; keep its design and controls unchanged.';
+  category='audio';hook='Dein Setup könnte dieses Upgrade gebrauchen';bridge='Achte auf Form, Anschlüsse und Tragekomfort';question='Gaming, Musik oder Arbeit?';
+  scenes=['A casual mirror selfie or desk scene with the exact audio product naturally in use.','A realistic flat lay showing the exact product and only confirmed included components.','A close-up lifestyle shot showing the product clearly without inventing ports or buttons.'];
  }else if(/handy|smartphone|tablet|laptop|monitor|kamera|phone|computer/.test(lower)){
-  category='electronics';hook='POV: Du überlegst, dein Setup aufzurüsten?';bridge='Vergleiche Anschlüsse, Kompatibilität und Lieferumfang. →';question='Wäre das ein Upgrade für dich?';scene='A casual everyday tech setup, with the exact device clearly visible and its ports, screen and proportions preserved.';
+  category='electronics';hook='Bevor du dein Setup aufrüstest …';bridge='Schau dir Anschlüsse, Größe und Details an';question='Wäre das ein Upgrade für dich?';
+  scenes=['A believable everyday selfie or desk setup featuring the exact device.','A top-down flat lay of the exact device and only confirmed accessories.','A close-up in a realistic everyday setting; preserve screen, camera layout, ports and proportions.'];
  }else if(/lampe|licht|leuchte|led|beleuchtung/.test(lower)){
-  category='lighting';hook='POV: Deinem Raum fehlt noch das richtige Licht?';bridge='Achte auf Lichtwirkung, Platzierung und Bedienung. →';question='Wo würdest du diese Leuchte einsetzen?';scene='A believable room where the exact light product is naturally installed or placed; do not invent controls or lighting modes.';
+  category='lighting';hook='Dieses Detail kann einen Raum verändern';bridge='Achte auf Form, Lichtwirkung und Bedienung';question='In welchem Raum würdest du sie nutzen?';
+  scenes=['A realistic room photo with the exact light product naturally placed or installed.','A flat lay of the exact light product and confirmed accessories.','A close-up of the actual fixture in a believable room, without invented controls or light modes.'];
  }else if(/garten|rasen|pflanze|bewässer|mäher|heckenschere/.test(lower)){
-  category='garden';hook='POV: Das nächste Gartenprojekt steht an?';bridge='Prüfe Einsatzbereich, Handhabung und Zubehör. →';question='Wäre das in deinem Garten hilfreich?';scene='A realistic garden or outdoor setting suited to the exact product, without inventing accessories or capabilities.';
+  category='garden';hook='Für dein nächstes Gartenprojekt?';bridge='Prüfe Einsatzbereich, Handhabung und Zubehör';question='Wäre das in deinem Garten hilfreich?';
+  scenes=['A natural outdoor UGC photo with the exact product in a believable garden context.','A top-down flat lay of the exact product and confirmed accessories.','A realistic close-up or use scene without inventing functions or included parts.'];
  }else if(/küche|kochen|kaffee|pfanne|messer|staubsauger|haushalt/.test(lower)){
-  category='home';hook='POV: Ein Alltagsproblem soll einfacher werden?';bridge='Schau dir Handhabung, Reinigung und Lieferumfang an. →';question='Würde dir das den Alltag erleichtern?';scene='A lived-in home or kitchen setting appropriate to the exact product; show realistic scale and no invented parts.';
+  category='home';hook='Ein kleines Upgrade für den Alltag?';bridge='Schau dir Handhabung und Lieferumfang an';question='Würde dir das den Alltag erleichtern?';
+  scenes=['A candid home or kitchen scene featuring the exact product naturally in use.','A realistic flat lay with only the product and confirmed accessories.','A close-up lifestyle shot that shows the actual product details.'];
  }
  if(usableDescription){
-  const first=description.split(/[.!?\n]/).map(x=>x.trim()).find(x=>x.length>18);
-  if(first)bridge=first.slice(0,105)+(first.length>105?'…':'')+' →';
+  const first=description.split(/[.!?\\n]/).map(x=>x.trim()).find(x=>x.length>18);
+  if(first)bridge=first.slice(0,105)+(first.length>105?'…':'');
  }
- return {name,category,hook,bridge,question,scene,facts,cta:'Aktuellen Preis und Details beim Händler prüfen →'};
+ const variants=/(mehrere farben|verschiedene farben|farbvarianten|in .*farben|colors|colour options)/i.test(description);
+ const multipack=/(3er[- ]?pack|3er[- ]?set|3 stück|3 teile|3 zum preis|3 für 1|multipack|3-pack)/i.test(description);
+ return {name,category,hook,bridge,question,scenes,facts,variants,multipack,cta:'Produktdetails und aktuellen Preis beim Händler prüfen'};
 }
 function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creative){
  return new Promise((resolve,reject)=>{
@@ -269,12 +282,12 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
    if(source>ratio){sw=Math.round(img.height*ratio);sx=Math.round((img.width-sw)/2);}
    else{sh=Math.round(img.width/ratio);sy=Math.round((img.height-sh)/2);}
    ctx.drawImage(img,sx,sy,sw,sh,0,0,1024,1152);
-   const headline=[creative.hook,'Bei '+creative.name+' auf diese Details achten',creative.question][index];
+   const headline=[creative.hook,creative.bridge,creative.question][index];
    const priceLine=verifiedPrice!==null?'Preis: '+money(verifiedPrice)+' · '+creative.cta:creative.cta;
-   const body=[ 'Wisch weiter – der Blick auf die Details lohnt sich. →', creative.bridge, priceLine ][index];
+   const body=[ 'Schau dir die nächsten Bilder an', creative.facts||'Details und Verarbeitung im Blick', priceLine ][index];
    const drawText=(text,x,y,font)=>{
     ctx.save();ctx.font=font;ctx.textAlign='left';ctx.textBaseline='alphabetic';
-    ctx.shadowColor='rgba(0,0,0,.82)';ctx.shadowBlur=8;ctx.shadowOffsetX=1;ctx.shadowOffsetY=2;
+    ctx.shadowColor='rgba(0,0,0,.95)';ctx.shadowBlur=1;ctx.shadowOffsetX=3;ctx.shadowOffsetY=3;ctx.lineJoin='round';ctx.strokeStyle='rgba(0,0,0,.98)';ctx.lineWidth=7;ctx.strokeText(text,x,y);
     ctx.fillStyle='#fff';ctx.fillText(text,x,y);ctx.restore();
    };
    const wrap=(text,maxWidth,font,maxLines)=>{
@@ -285,10 +298,10 @@ function composeGeneratedSlide(dataUrl,slide,index,product,verifiedPrice,creativ
     return lines;
    };
    // Minimal white Snapchat-style copy; no cards, stickers or decorative badges.
-   const headlineFont='700 46px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
-   const bodyFont='600 31px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+   const headlineFont='800 52px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+   const bodyFont='700 34px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
    const headlineLines=wrap(headline,900,headlineFont,2);
-   let y=index===0?145:875;
+   let y=545;
    headlineLines.forEach(line=>{drawText(line,62,y,headlineFont);y+=57;});
    const bodyLines=wrap(body,900,bodyFont,2);y+=14;
    bodyLines.forEach(line=>{drawText(line,62,y,bodyFont);y+=40;});
@@ -316,13 +329,13 @@ async function generateSlideImages(postId){
    if(status)status.textContent='KI-Bild '+(i+1)+' von 3 wird generiert – Originalreferenz wird einzeln geschützt …';
    const slide=post.draft.slides[i]||{};
    const selectedIndex=Math.min(i,referenceImages.length-1);
-   const base='Create a highly photorealistic imperfect iPhone 12 snapshot, 8:9 portrait. IMAGE-TO-IMAGE EDIT of the single supplied product reference, not a redesign and not a new interpretation. The exact physical product in the reference is the subject and must remain visually identical: preserve its silhouette, dimensions, color, fabric/material, seams, stitching, every zipper/button/pocket/label/logo placement and all small construction details. Do not replace, duplicate, simplify, beautify, stylize, repair, remove or invent any product part. Do not combine different product variants. Product identity has absolute priority over scene creativity. Keep the product large, sharp and unobstructed, occupying at least 55 percent of the frame. Natural ambient light, believable handheld smartphone perspective, mild phone-camera noise and realistic everyday background. No studio lighting, no catalog render, no text, no graphics, no arrows, no watermark, no extra accessories. Product name for context only: '+creative.name+'. Product category: '+creative.category+'. '+(creative.facts?'User-provided product description for context only (do not add anything not visible in reference): '+creative.facts:'No verified technical specifications supplied; do not invent product claims.')+' ';
+   const base='Create a COMPLETELY NEW photorealistic user-generated smartphone photograph for a TikTok photo carousel, vertical 8:9. Do not reuse the reference photo background, camera angle, composition, pose or crop. Re-stage and regenerate a fresh image from scratch. The supplied product photo is a strict identity reference only: reproduce the same exact product, not a similar product. Preserve recognizable product design, silhouette, proportions, colorway, material, seams, stitching, pockets, zippers, buttons, labels and logo placement. Do not redesign, beautify, stylize, simplify, merge variants, or invent features, accessories, colors or branding. The result must look like a believable candid iPhone 12 photo made by a real customer, not an AI catalog render: natural ambient light, realistic room or street, authentic handheld framing, subtle camera imperfections, realistic human anatomy and product scale. Product must be the clear focal point and remain recognizable. No text, no graphics, no arrows, no watermark. Product name for context: '+creative.name+'. Category: '+creative.category+'. '+(creative.facts?'Description for context only; show only details supported by reference: '+creative.facts:'No verified technical specifications supplied; do not invent claims.')+' ';
    const directions=[
-    'Scene: '+creative.scene+' Authentic casual POV/reaction moment. A real person may be partially visible only if it does not cover or alter the product; natural candid framing. Product remains the clear focal point and matches the supplied reference exactly. Create curiosity for the next slide.',
-    'Scene: '+creative.scene+' Believable everyday-use context. Show the exact product naturally in use or placed in context, but do not invent how it works or add unseen features. Preserve the reference item exactly. Leave some clean space for a short white text overlay; no arrows because image details must not be guessed.',
-    'Scene: strong but believable final smartphone product photo in a real everyday environment. Show the exact same item from the supplied reference, unchanged, clearly and fully recognizable. Simple composition with negative space for a short white CTA.'
+    'SCENE 1 / HOOK: '+creative.scenes[0]+' Strong social-first composition that stops scrolling, authentic and spontaneous.',
+    'SCENE 2 / PRODUCT: '+creative.scenes[1]+' Clearly communicate the product itself; use a visibly different camera angle and setting from slide 1.',
+    'SCENE 3 / CLOSE: '+creative.scenes[2]+' Distinct new composition and angle, suitable for the final slide of a product carousel.'
    ];
-   // One reference per generation prevents the model blending different angles or variants.
+   // The image model must create a new scene; reference is identity guidance, never a background to preserve.
    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({prompt:base+directions[i],images:[referenceImages[selectedIndex]]})});
    const payload=await response.json().catch(()=>({}));
    if(!response.ok)throw new Error(payload.error||'Generator-Fehler ('+response.status+')');
@@ -331,7 +344,7 @@ async function generateSlideImages(postId){
    post.draft.generatedSlides[i]={dataUrl:finalImage,createdAt:new Date().toISOString(),model:payload.model||'@cf/black-forest-labs/flux-2-klein-4b',aspectRatio:'8:9',sourceReferenceIndex:selectedIndex,referenceCount:1};
    await db.put('posts',post);
   }
-  post.draft.productionStatus='Drei KI-generierte 8:9-iPhone-UGC-Slides erstellt. Pro Slide wurde genau eine Produktreferenz verwendet; Textauswahl produktbezogen. Bilddetails vor Veröffentlichung visuell gegen das Original prüfen.';
+  post.draft.productionStatus='Drei vollständig neu generierte 8:9-UGC-Szenen erstellt. Produktfotos dienen als Identitätsreferenz; jede Slide erhält eine neue Szene und produktbezogenen Text. Bilddetails vor Veröffentlichung visuell gegen das Original prüfen.';
   post.status='KI-Slides erstellt – Freigabe offen';post.updatedAt=new Date().toISOString();
   await db.put('posts',post);log('Drei KI-UGC-Slides generiert',post.title);
   state.selectedPostId=post.id;renderPage();toast('Drei KI-Slides mit produktbezogenen Texten gespeichert.');
