@@ -3,7 +3,7 @@ const MODEL = '@cf/black-forest-labs/flux-2-klein-4b';
 const VISION_MODEL = '@cf/moondream/moondream3.1-9B-A2B';
 const TEXT_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const MAX_BODY_BYTES = 15 * 1024 * 1024;
-const SYNC_STORES = new Set(['workspaces','products','posts','activities','agentTasks','financeTransactions','settings']);
+const SYNC_TABLES = { workspaces: 'workspaces', products: 'products', posts: 'posts', activities: 'activities', agentTasks: 'agent_tasks', financeTransactions: 'finance_transactions', settings: 'settings' };
 const jwksCache = new Map();
 
 export default {
@@ -98,10 +98,10 @@ async function syncApi(request, env, cors) {
    const workspaceId = new URL(request.url).searchParams.get('workspaceId');
    if (!workspaceId || workspaceId.length>128) return json({error:'workspaceId fehlt oder ist ungültig.'},400,cors);
    const result={};
-   for (const store of SYNC_STORES) {
+   for (const [store, table] of Object.entries(SYNC_TABLES)) {
     const rows = store==='workspaces'
      ? await env.DB.prepare('SELECT id, payload_json, updated_at FROM workspaces WHERE owner_sub = ? AND id = ? AND deleted_at IS NULL LIMIT 1').bind(subject,workspaceId).all()
-     : await env.DB.prepare('SELECT id, payload_json, updated_at FROM '+store+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
+     : await env.DB.prepare('SELECT id, payload_json, updated_at FROM '+table+' WHERE owner_sub = ? AND workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 2000').bind(subject,workspaceId).all();
     result[store]=rows.results.map(row=>({id:row.id,...JSON.parse(row.payload_json),updatedAt:row.updated_at}));
    }
    return json({workspaceId,stores:result},200,cors);
@@ -113,7 +113,8 @@ async function syncApi(request, env, cors) {
   for (const record of body.records) {
    const store=String(record?.store||'');
    const item=record?.item;
-   if (!SYNC_STORES.has(store) || !item || typeof item!=='object' || Array.isArray(item)) return json({error:'Ungültiger Datensatz.'},400,cors);
+   const table=SYNC_TABLES[store];
+   if (!table || !item || typeof item!=='object' || Array.isArray(item)) return json({error:'Ungültiger Datensatz.'},400,cors);
    const id=String(item.id||'');
    const workspaceId=store==='workspaces'?id:String(item.workspaceId||'');
    if (!id || id.length>128 || !workspaceId || workspaceId.length>128) return json({error:'Datensatz-ID oder workspaceId fehlt.'},400,cors);
@@ -122,7 +123,7 @@ async function syncApi(request, env, cors) {
    if (payload.length>1_000_000) return json({error:'Datensatz überschreitet 1 MB.'},413,cors);
    const exists=await env.DB.prepare('SELECT id FROM workspaces WHERE owner_sub=? AND id=? AND deleted_at IS NULL').bind(subject,workspaceId).first();
    if (store!=='workspaces' && !exists) return json({error:'Arbeitsbereich nicht gefunden oder kein Zugriff.'},403,cors);
-   statements.push(env.DB.prepare('INSERT INTO '+store+' (id,owner_sub,workspace_id,payload_json,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,NULL) ON CONFLICT(owner_sub,id) DO UPDATE SET workspace_id=excluded.workspace_id,payload_json=excluded.payload_json,updated_at=excluded.updated_at,deleted_at=NULL WHERE '+store+'.updated_at <= excluded.updated_at').bind(id,subject,workspaceId,payload, String(item.createdAt||now),String(item.updatedAt||now)));
+   statements.push(env.DB.prepare('INSERT INTO '+table+' (id,owner_sub,workspace_id,payload_json,created_at,updated_at,deleted_at) VALUES (?,?,?,?,?,?,NULL) ON CONFLICT(owner_sub,id) DO UPDATE SET workspace_id=excluded.workspace_id,payload_json=excluded.payload_json,updated_at=excluded.updated_at,deleted_at=NULL WHERE '+table+'.updated_at <= excluded.updated_at').bind(id,subject,workspaceId,payload, String(item.createdAt||now),String(item.updatedAt||now)));
   }
   if (statements.length) await env.DB.batch(statements);
   return json({ok:true,saved:statements.length,ownerScoped:true},200,cors);
