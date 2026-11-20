@@ -25,7 +25,7 @@
 
 ## KI-Modelle und Kostenkontrolle
 - Cloudflare Workers AI enthält laut aktueller Preisseite eine kostenlose Zuteilung von 10.000 Neurons pro Tag. Bei Überschreitung schlagen weitere Anfragen im Free-Plan fehl; es erfolgt kein automatischer kostenpflichtiger Wechsel.\n- Vision: `@cf/moondream/moondream3.1-9B-A2B`.
-- Text/Creative-Strategie: `@cf/meta/llama-3.1-8b-instruct`.
+- Text/Creative-Strategie: `@cf/meta/llama-3.2-3b-instruct`.
 - Bildproduktion: `@cf/black-forest-labs/flux-2-klein-4b`.
 - Jede Produktanalyse verbraucht Workers-AI-Inferenzkontingent; drei Bildgenerierungen verbrauchen zusätzlich Bildmodellkontingent.
 - Vor dem Rollout die aktuellen Cloudflare-Modellpreise und das verfügbare Konto-Kontingent prüfen. Bei Limitfehlern wird die Produktion abgebrochen und es erfolgt kein stilles kostenpflichtiges Upgrade.
