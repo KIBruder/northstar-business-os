@@ -1,6 +1,6 @@
 # CLIP-FINDER PRO local engine (foundation)
 
-This first backend slice provides a local health check, persistent projects, large-file streaming upload, SHA-256 fingerprints, and FFmpeg/ffprobe media inspection. It does **not** yet claim to detect highlights or render clips; those are the next P0 milestones.
+The local engine now supports project/media intake, signal-based highlight candidate analysis, and FFmpeg clip rendering. Candidate selection combines one-second audio RMS/dynamics with FFmpeg scene-change timestamps. This is a transparent heuristic, not semantic AI or speech understanding. Jobs and results are recorded in SQLite; active work currently runs as FastAPI background tasks and is not automatically resumed after a process restart.
 
 ## Requirements
 - Python 3.11+
@@ -27,6 +27,11 @@ Do not expose this service to a network without authentication. Set a random tok
 - `POST /api/projects`: JSON `{"title":"Stream Highlights","mode":"clipper"}`; modes: `clipper`, `movie-recap`, `podcast`.
 - `POST /api/projects/{project_id}/assets`: multipart field `file`; streams the upload to disk, computes SHA-256, probes media metadata, and persists the asset.
 - `GET /api/projects/{project_id}`: project and asset inventory.
+- `POST /api/projects/{project_id}/analyze`: JSON `{ "clip_seconds": 60, "clip_count": 5 }`; creates a background analysis job.
+- `GET /api/jobs/{job_id}`: job state and progress.
+- `GET /api/projects/{project_id}/candidates`: ranked candidate windows and signal-based reasons.
+- `POST /api/projects/{project_id}/candidates/{candidate_id}/render`: JSON `{ "aspect_ratio": "9:16", "quality": 1080 }`; starts an MP4 render job.
+- `GET /api/exports/{export_id}/download`: authenticated MP4 download.
 
 The upload limit defaults to 100 GiB and can be changed with `CLIPPER_MAX_UPLOAD_BYTES`. Data is stored under `CLIPPER_DATA_DIR` (default: `clipper-engine/data`) and is git-ignored.
 
