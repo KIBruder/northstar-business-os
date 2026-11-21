@@ -1,11 +1,16 @@
-# CLIP-FINDER PRO local engine (foundation)
+# CLIP-FINDER PRO local engine
 
-The local engine now supports project/media intake, signal-based highlight candidate analysis, and FFmpeg clip rendering. Candidate selection combines one-second audio RMS/dynamics with FFmpeg scene-change timestamps. This is a transparent heuristic, not semantic AI or speech understanding. Jobs and results are recorded in SQLite; active work currently runs as FastAPI background tasks and is not automatically resumed after a process restart.
+The local engine supports project/media intake, candidate analysis, and FFmpeg clip rendering. Its analysis has two levels:
+
+- **Base mode:** one-second audio RMS/dynamics plus FFmpeg scene-change timestamps.
+- **Optional transcript mode:** local speech-to-text with faster-whisper, adding speech coverage, word density, selected emphasis terms, punctuation cues, and a transcript excerpt to candidate ranking.
+
+Transcript scoring is a lightweight heuristic over recognized words, not a general-purpose semantic understanding model. It does not claim to detect humor, factual importance, or a viral moment reliably. If faster-whisper is not installed, analysis automatically uses base mode.
 
 ## Requirements
 - Python 3.11+
 - FFmpeg including `ffmpeg` and `ffprobe` on PATH
-- Free disk space for the source media and future exports
+- Free disk space for source media and exports
 
 ## Start (Windows PowerShell)
 ```powershell
@@ -18,26 +23,35 @@ $env:CLIPPER_HOST = "127.0.0.1"
 uvicorn main:app --host $env:CLIPPER_HOST --port 8765
 ```
 
-Open `http://127.0.0.1:8765/health`. For API docs open `http://127.0.0.1:8765/docs`.
+## Enable local transcript analysis
+Install the optional dependency set:
+```powershell
+pip install -r requirements-ai.txt
+```
+The first transcription run downloads the configured Whisper model. Default: `small`, CPU, int8. Configure before starting the server:
+```powershell
+$env:CLIPPER_WHISPER_MODEL = "small"
+# Optional: force language, e.g. "de" or "en". Leave unset for language detection.
+$env:CLIPPER_WHISPER_LANGUAGE = "de"
+```
+For an initial iPhone-connected test, the host computer must run the engine; the iPhone is the control surface, not the compute device. Model downloads and inference happen on the host. The small model is a practical starting point; larger models need more RAM and processing time.
 
 ## iPhone/LAN mode
-Do not expose this service to a network without authentication. Set a random token of at least 32 characters in `CLIPPER_API_TOKEN`, then set `$env:CLIPPER_HOST = "0.0.0.0"`. Set `$env:CLIPPER_ALLOWED_ORIGINS` to the exact UI origin, for example `http://192.168.1.20:8000` (comma-separated allowlist). Send the token as `X-Clipper-Token`. Configure firewall access only for the trusted private LAN. HTTPS/reverse-proxy setup is required before use outside the LAN.
+Do not expose this service to a network without authentication. Set a random token of at least 32 characters in `CLIPPER_API_TOKEN`, then set `CLIPPER_HOST = "0.0.0.0"`. Set `CLIPPER_ALLOWED_ORIGINS` to the exact UI origin, for example `http://192.168.1.20:8000` (comma-separated allowlist). Send the token as `X-Clipper-Token`. Configure firewall access only for the trusted private LAN. HTTPS/reverse-proxy setup is required before use outside the LAN.
 
 ## API
-- `GET /health`: engine and FFmpeg availability (no secret).
-- `POST /api/projects`: JSON `{"title":"Stream Highlights","mode":"clipper"}`; modes: `clipper`, `movie-recap`, `podcast`.
-- `POST /api/projects/{project_id}/assets`: multipart field `file`; streams the upload to disk, computes SHA-256, probes media metadata, and persists the asset.
+- `GET /health`: engine and FFmpeg availability.
+- `POST /api/projects`: create a project; modes: `clipper`, `movie-recap`, `podcast`.
+- `POST /api/projects/{project_id}/assets`: upload media and inspect metadata.
 - `GET /api/projects/{project_id}`: project and asset inventory.
-- `POST /api/projects/{project_id}/analyze`: JSON `{ "clip_seconds": 60, "clip_count": 5 }`; creates a background analysis job.
+- `POST /api/projects/{project_id}/analyze`: JSON `{ "clip_seconds": 60, "clip_count": 5 }`.
 - `GET /api/jobs/{job_id}`: job state and progress.
-- `GET /api/projects/{project_id}/candidates`: ranked candidate windows and signal-based reasons.
-- `POST /api/projects/{project_id}/candidates/{candidate_id}/render`: JSON `{ "aspect_ratio": "9:16", "quality": 1080 }`; starts an MP4 render job.
+- `GET /api/projects/{project_id}/candidates`: ranked candidates, reasons, and optional transcript excerpts.
+- `POST /api/projects/{project_id}/candidates/{candidate_id}/render`: JSON `{ "aspect_ratio": "9:16", "quality": 1080 }`.
 - `GET /api/exports/{export_id}/download`: authenticated MP4 download.
 
-The upload limit defaults to 100 GiB and can be changed with `CLIPPER_MAX_UPLOAD_BYTES`. Data is stored under `CLIPPER_DATA_DIR` (default: `clipper-engine/data`) and is git-ignored.
-
-## Next implementation steps
-1. Resumable/chunked uploads and durable job queue.
-2. Scene/audio/transcript analysis and clip-candidate ranking.
-3. FFmpeg batch render, audio-preserving output and export validation.
-4. Podcast repurpose and hierarchical Movie Recap with local TTS.
+## Current limitations
+- Transcript scoring uses transparent lexical and timing heuristics; it is not deep semantic or viral-moment classification.
+- The model runs on the host CPU by default and may be slow on long recordings.
+- Jobs currently use FastAPI background tasks and are not automatically resumed after a server restart.
+- Long-form (5–6 hour) media, actual FFmpeg rendering on the target host, and browser end-to-end behavior still require real-world validation.
