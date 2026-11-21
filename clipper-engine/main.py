@@ -380,7 +380,7 @@ class AnalyzeInput(BaseModel):
 class RenderInput(BaseModel):
     aspect_ratio: str = "9:16"
     quality: int = Field(default=1080, ge=720, le=1080)
-    framing: str = Field(default="crop", pattern="^(crop|blur)$")
+    framing: str = Field(default="crop", pattern="^(crop|blur|face)$")
 
 
 def update_job(job_id: str, status: str, progress: int, stage: str, error: str | None = None, result: dict[str, Any] | None = None) -> None:
