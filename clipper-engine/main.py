@@ -9,7 +9,7 @@ import sqlite3
 import subprocess
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -128,7 +128,7 @@ def recover_interrupted_jobs() -> None:
 def claim_next_job(worker_id: str) -> dict[str, Any] | None:
     """Atomically claim a queued job and establish a renewable lease."""
     stamp = now_iso()
-    expires = (datetime.now(timezone.utc) + __import__('datetime').timedelta(seconds=LEASE_SECONDS)).isoformat()
+    expires = (datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS)).isoformat()
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
