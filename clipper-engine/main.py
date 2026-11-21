@@ -74,7 +74,7 @@ def init_db() -> None:
           duration_seconds REAL, probe_json TEXT NOT NULL, created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
-        CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, stage TEXT NOT NULL, error TEXT, result_json TEXT, payload_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, stage TEXT NOT NULL, error TEXT, result_json TEXT, payload_json TEXT, lease_owner TEXT, lease_expires_at TEXT, attempt_count INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 3, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
         CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, project_id TEXT NOT NULL, asset_id TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL, score REAL NOT NULL, reasons_json TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_candidates_job ON candidates(job_id);
@@ -82,48 +82,80 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_exports_project ON exports(project_id);
         """)
         columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)").fetchall()}
-        if "payload_json" not in columns:
-            db.execute("ALTER TABLE jobs ADD COLUMN payload_json TEXT")
+        migrations = {
+            "payload_json": "TEXT",
+            "lease_owner": "TEXT",
+            "lease_expires_at": "TEXT",
+            "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+            "max_attempts": "INTEGER NOT NULL DEFAULT 3",
+        }
+        for name, definition in migrations.items():
+            if name not in columns:
+                db.execute(f"ALTER TABLE jobs ADD COLUMN {name} {definition}")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs(status,lease_expires_at)")
 
 
 worker_thread: threading.Thread | None = None
 worker_stop = threading.Event()
 
 
+LEASE_SECONDS = int(os.environ.get("CLIPPER_WORKER_LEASE_SECONDS", "90"))
+HEARTBEAT_SECONDS = max(5, min(30, LEASE_SECONDS // 3))
+MAX_JOB_ATTEMPTS = max(1, int(os.environ.get("CLIPPER_MAX_JOB_ATTEMPTS", "3")))
+
+
 def recover_interrupted_jobs() -> None:
-    """Requeue jobs with durable payloads; fail legacy jobs that cannot be replayed."""
+    """Recover only expired leases; active workers retain their jobs across app restarts."""
     stamp = now_iso()
     with connect() as db:
         db.execute(
-            """UPDATE jobs SET status='queued',progress=0,stage='Nach Neustart wieder aufgenommen',
-               error=NULL,updated_at=? WHERE status='running' AND payload_json IS NOT NULL""",
-            (stamp,),
+            """UPDATE jobs SET status='failed',stage='Nicht wiederherstellbarer Alt-Job',
+               error='Dieser Job besitzt keine gespeicherten Auftragsdaten und kann nicht wiederhergestellt werden.',
+               lease_owner=NULL,lease_expires_at=NULL,updated_at=?
+               WHERE status='queued' AND payload_json IS NULL""", (stamp,),
         )
         db.execute(
-            """UPDATE jobs SET status='failed',stage='Nicht wiederherstellbarer Alt-Job',
-               error='Dieser Job wurde vor Einführung der persistenten Warteschlange erstellt und besitzt keine gespeicherten Auftragsdaten.',
-               updated_at=? WHERE status IN ('queued','running') AND payload_json IS NULL""",
-            (stamp,),
+            """UPDATE jobs SET status=CASE WHEN attempt_count >= max_attempts THEN 'failed' ELSE 'queued' END,
+               progress=CASE WHEN attempt_count >= max_attempts THEN progress ELSE 0 END,
+               stage=CASE WHEN attempt_count >= max_attempts THEN 'Wiederholungsgrenze erreicht' ELSE 'Abgelaufener Worker-Lease – erneut eingereiht' END,
+               error=CASE WHEN attempt_count >= max_attempts THEN 'Maximale Anzahl an Wiederherstellungsversuchen erreicht.' ELSE NULL END,
+               lease_owner=NULL,lease_expires_at=NULL,updated_at=?
+               WHERE status='running' AND (lease_expires_at IS NULL OR lease_expires_at <= ?) AND payload_json IS NOT NULL""",
+            (stamp, stamp),
         )
 
 
-def claim_next_job() -> dict[str, Any] | None:
-    """Atomically claim the oldest queued job across all engine processes."""
+def claim_next_job(worker_id: str) -> dict[str, Any] | None:
+    """Atomically claim a queued job and establish a renewable lease."""
+    stamp = now_iso()
+    expires = (datetime.now(timezone.utc) + __import__('datetime').timedelta(seconds=LEASE_SECONDS)).isoformat()
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
-            "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1"
+            "SELECT * FROM jobs WHERE status='queued' AND payload_json IS NOT NULL AND attempt_count < max_attempts ORDER BY created_at,id LIMIT 1"
         ).fetchone()
         if row is None:
             return None
         changed = db.execute(
-            "UPDATE jobs SET status='running',progress=1,stage='Worker hat Auftrag übernommen',updated_at=? WHERE id=? AND status='queued'",
-            (now_iso(), row["id"]),
+            """UPDATE jobs SET status='running',progress=1,stage='Worker hat Auftrag übernommen',
+               lease_owner=?,lease_expires_at=?,attempt_count=attempt_count+1,updated_at=?
+               WHERE id=? AND status='queued'""",
+            (worker_id, expires, stamp, row["id"]),
         ).rowcount
         if changed != 1:
             return None
         claimed = db.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
         return dict(claimed)
+
+
+def heartbeat_job(job_id: str, worker_id: str) -> bool:
+    expires = (datetime.now(timezone.utc) + __import__('datetime').timedelta(seconds=LEASE_SECONDS)).isoformat()
+    with connect() as db:
+        changed = db.execute(
+            "UPDATE jobs SET lease_expires_at=?,updated_at=? WHERE id=? AND status='running' AND lease_owner=?",
+            (expires, now_iso(), job_id, worker_id),
+        ).rowcount
+    return changed == 1
 
 
 def dispatch_job(job: dict[str, Any]) -> None:
@@ -137,16 +169,36 @@ def dispatch_job(job: dict[str, Any]) -> None:
 
 
 def worker_loop() -> None:
+    worker_id = str(uuid.uuid4())
+    last_recovery = 0.0
     while not worker_stop.is_set():
         job = None
         try:
-            job = claim_next_job()
+            import time
+            if time.monotonic() - last_recovery >= 10:
+                recover_interrupted_jobs()
+                last_recovery = time.monotonic()
+            job = claim_next_job(worker_id)
             if job:
-                dispatch_job(job)
+                heartbeat_stop = threading.Event()
+                def heartbeat_loop() -> None:
+                    while not heartbeat_stop.wait(HEARTBEAT_SECONDS):
+                        if not heartbeat_job(job["id"], worker_id):
+                            break
+                heartbeat = threading.Thread(target=heartbeat_loop, name=f"clipper-heartbeat-{job['id'][:8]}", daemon=True)
+                heartbeat.start()
+                try:
+                    dispatch_job(job)
+                finally:
+                    heartbeat_stop.set()
+                    heartbeat.join(timeout=HEARTBEAT_SECONDS + 1)
+                    with connect() as db:
+                        db.execute("UPDATE jobs SET lease_owner=NULL,lease_expires_at=NULL WHERE id=? AND lease_owner=?", (job["id"], worker_id))
                 continue
         except Exception as exc:
             if job:
-                update_job(job["id"], "failed", 100, "Worker-Fehler", error=str(exc)[:2000])
+                with connect() as db:
+                    db.execute("UPDATE jobs SET status='failed',progress=100,stage='Worker-Fehler',error=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_owner=?", (str(exc)[:2000], now_iso(), job["id"], worker_id))
         worker_stop.wait(float(os.environ.get("CLIPPER_QUEUE_POLL_SECONDS", "1.0")))
 
 
@@ -302,8 +354,8 @@ class RenderInput(BaseModel):
 
 def update_job(job_id: str, status: str, progress: int, stage: str, error: str | None = None, result: dict[str, Any] | None = None) -> None:
     with connect() as db:
-        db.execute("UPDATE jobs SET status=?,progress=?,stage=?,error=?,result_json=?,updated_at=? WHERE id=?",
-                   (status, progress, stage, error, json.dumps(result) if result is not None else None, now_iso(), job_id))
+        db.execute("UPDATE jobs SET status=?,progress=?,stage=?,error=?,result_json=?,lease_owner=CASE WHEN ? IN ('completed','failed') THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN ? IN ('completed','failed') THEN NULL ELSE lease_expires_at END,updated_at=? WHERE id=?",
+                   (status, progress, stage, error, json.dumps(result) if result is not None else None, status, status, now_iso(), job_id))
 
 
 def run_analysis_job(job_id: str, project_id: str, asset_id: str, source_path: str, settings: dict[str, Any]) -> None:
