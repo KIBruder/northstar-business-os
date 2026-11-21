@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
 import json
 import os
 import shutil
@@ -13,7 +14,8 @@ from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field\nfrom fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("CLIPPER_DATA_DIR", APP_DIR / "data")).resolve()
@@ -41,11 +43,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def connect() -> sqlite3.Connection:
+@contextmanager
+def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(DB_PATH)
+    db = sqlite3.connect(DB_PATH, timeout=30)
     db.row_factory = sqlite3.Row
-    return db
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 def init_db() -> None:
@@ -63,6 +73,12 @@ def init_db() -> None:
           duration_seconds REAL, probe_json TEXT NOT NULL, created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
+        CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, stage TEXT NOT NULL, error TEXT, result_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
+        CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, project_id TEXT NOT NULL, asset_id TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL, score REAL NOT NULL, reasons_json TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_candidates_job ON candidates(job_id);
+        CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, candidate_id TEXT NOT NULL, path TEXT NOT NULL, duration_seconds REAL NOT NULL, aspect_ratio TEXT NOT NULL, resolution TEXT NOT NULL, size_bytes INTEGER NOT NULL, created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_exports_project ON exports(project_id);
         """)
 
 
@@ -119,10 +135,13 @@ def probe_media(path: Path) -> dict[str, Any]:
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
         raise HTTPException(status_code=503, detail="ffprobe is not installed. Install FFmpeg and ensure ffprobe is on PATH.")
-    result = subprocess.run(
-        [ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
-        capture_output=True, text=True, timeout=180,
-    )
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=180,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail="Media inspection timed out after 180 seconds.") from exc
     if result.returncode != 0:
         raise HTTPException(status_code=422, detail="The uploaded file is not a readable media file.")
     try:
