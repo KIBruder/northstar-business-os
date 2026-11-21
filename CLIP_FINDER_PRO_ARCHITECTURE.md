@@ -2,7 +2,7 @@
 
 **Status:** beschlossen; Umsetzung startet auf Feature-Branch.  
 **Produkt:** vollständiger Umbau von Northstar zum Local-first AI Video Studio.  
-**Priorisierte Modi:** Auto Clipper, Movie Recap (2–15 Minuten), Podcast Repurpose.  
+**Priorisierte Modi:** Auto Clipper zuerst vollständig; danach Podcast Repurpose und Movie Recap (verbindliche Ziellänge 5–15 Minuten).  
 **Voiceover:** ausschließlich KI-Stimmen in der ersten Ausbaustufe.  
 **Kostenrahmen:** 0 € Software-/API-Budget zum Start; lokale Open-Source-Komponenten bevorzugt.
 
