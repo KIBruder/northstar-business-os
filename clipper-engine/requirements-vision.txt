@@ -1,0 +1,2 @@
+# Optional face-aware reframing (experimental)
+opencv-python-headless>=4.10,<5

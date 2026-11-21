@@ -1,0 +1,57 @@
+name: CLIP-FINDER PRO Engine CI
+on:
+  pull_request:
+    paths:
+      - "clipper-engine/**"
+      - ".github/workflows/clipper-engine-ci.yml"
+  push:
+    branches: ["feat/clip-finder-pro-foundation"]
+    paths:
+      - "clipper-engine/**"
+      - ".github/workflows/clipper-engine-ci.yml"
+jobs:
+  validate-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install engine dependencies
+        run: pip install -r clipper-engine/requirements.txt
+      - name: Install test runner
+        run: pip install pytest
+      - name: Run pipeline tests
+        working-directory: clipper-engine
+        run: pytest -q
+      - name: Compile Python modules
+        working-directory: clipper-engine
+        run: python -m py_compile main.py pipeline.py
+      - name: Validate FastAPI routes and database schema
+        working-directory: clipper-engine
+        run: |
+          python - <<'PY'
+          import tempfile
+          from pathlib import Path
+          import main
+          main.DATA_DIR = Path(tempfile.mkdtemp(prefix="clip-finder-ci-"))
+          main.DB_PATH = main.DATA_DIR / "test.sqlite3"
+          main.MEDIA_DIR = main.DATA_DIR / "media"
+          main.startup()
+          paths = {route.path for route in main.app.routes}
+          required = {
+              "/health",
+              "/api/projects",
+              "/api/projects/{project_id}/analyze",
+              "/api/jobs/{job_id}",
+              "/api/projects/{project_id}/candidates",
+              "/api/projects/{project_id}/candidates/{candidate_id}/render",
+              "/api/exports/{export_id}/download",
+          }
+          assert required.issubset(paths), required - paths
+          import sqlite3
+          with sqlite3.connect(main.DB_PATH) as db:
+              tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+          assert {"projects", "assets", "jobs", "candidates", "exports"}.issubset(tables)
+          print("Engine imports, routes and SQLite schema validated.")
+          PY
