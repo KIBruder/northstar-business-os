@@ -19,6 +19,11 @@ jobs:
           python-version: "3.11"
       - name: Install engine dependencies
         run: pip install -r clipper-engine/requirements.txt
+      - name: Install test runner
+        run: pip install pytest
+      - name: Run pipeline tests
+        working-directory: clipper-engine
+        run: pytest -q
       - name: Compile Python modules
         working-directory: clipper-engine
         run: python -m py_compile main.py pipeline.py
