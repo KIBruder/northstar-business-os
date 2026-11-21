@@ -56,3 +56,31 @@ def test_render_keeps_optional_source_audio_and_writes_mp4(tmp_path, monkeypatch
     assert result["duration_seconds"] == 30.0
     assert result["resolution"] == "1080x1920"
     assert result["aspect_ratio"] == "9:16"
+
+
+def test_render_blur_framing_preserves_full_frame(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+    captured = {}
+    def fake_run(command, timeout=3600):
+        captured["command"] = command
+        Path(command[-1]).write_bytes(b"mock-mp4")
+        return subprocess.CompletedProcess(command, 0, "", "")
+    monkeypatch.setattr(pipeline, "run", fake_run)
+    output = tmp_path / "blur.mp4"
+    result = pipeline.render(Path("source.mp4"), output, 0, 20, "9:16", 720, "blur")
+    command = captured["command"]
+    graph = command[command.index("-filter_complex") + 1]
+    assert "force_original_aspect_ratio=decrease" in graph
+    assert "boxblur=20:2" in graph
+    assert result["framing"] == "blur"
+    assert result["resolution"] == "720x1280"
+
+
+def test_render_rejects_unknown_framing(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline.shutil, "which", lambda name: "/usr/bin/ffmpeg")
+    try:
+        pipeline.render(Path("source.mp4"), tmp_path / "bad.mp4", 0, 10, "9:16", 1080, "tracking")
+    except RuntimeError as exc:
+        assert "Bildanpassung" in str(exc)
+    else:
+        raise AssertionError("unknown framing must be rejected")
