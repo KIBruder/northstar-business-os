@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import json
+import array
 import math
+import os
 import re
 import shutil
 import statistics
 import subprocess
-import wave
+import sys
 import uuid
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ def audio_energy(path: Path, work: Path) -> tuple[list[float], float]:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError("FFmpeg fehlt. Installiere FFmpeg und füge ffmpeg zu PATH hinzu.")
+    work.mkdir(parents=True, exist_ok=True)
     wav_path = work / "analysis-audio.wav"
     result = run([ffmpeg, "-y", "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(wav_path)], timeout=7200)
     if result.returncode:
@@ -29,22 +32,44 @@ def audio_energy(path: Path, work: Path) -> tuple[list[float], float]:
         rate, width, frames = wav.getframerate(), wav.getsampwidth(), wav.getnframes()
         if width != 2:
             raise RuntimeError("Unerwartetes PCM-Audioformat.")
-        samples_per_window = rate
         while True:
-            raw = wav.readframes(samples_per_window)
+            raw = wav.readframes(rate)
             if not raw:
                 break
             count = len(raw) // 2
-            if not count:
-                continue
-            import array
-            values = array.array("h")
-            values.frombytes(raw)
-            if __import__("sys").byteorder != "little":
-                values.byteswap()
-            rms = math.sqrt(sum(float(v) * v for v in values) / count)
-            energies.append(rms / 32768.0)
+            if count:
+                values = array.array("h")
+                values.frombytes(raw)
+                if sys.byteorder != "little":
+                    values.byteswap()
+                energies.append(math.sqrt(sum(float(v) * v for v in values) / count) / 32768.0)
     return energies, frames / rate if rate else 0.0
+
+
+def transcribe_audio(wav_path: Path) -> list[dict[str, Any]] | None:
+    """Optional local ASR. None means faster-whisper is not installed."""
+    try:
+        from faster_whisper import WhisperModel
+    except ImportError:
+        return None
+
+    model_size = os.environ.get("CLIPPER_WHISPER_MODEL", "small")
+    language = os.environ.get("CLIPPER_WHISPER_LANGUAGE", "").strip() or None
+    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    segments, _info = model.transcribe(
+        str(wav_path), language=language, vad_filter=True, beam_size=3,
+        condition_on_previous_text=False,
+    )
+    transcript = []
+    for segment in segments:
+        text = (segment.text or "").strip()
+        if text:
+            transcript.append({
+                "start": max(0.0, float(segment.start)),
+                "end": max(float(segment.start), float(segment.end)),
+                "text": text,
+            })
+    return transcript
 
 
 def scene_times(path: Path) -> list[float]:
@@ -59,11 +84,48 @@ def scene_times(path: Path) -> list[float]:
     return [float(v) for v in re.findall(r"pts_time:([0-9]+(?:\.[0-9]+)?)", result.stderr)]
 
 
+def transcript_features(segments: list[dict[str, Any]], start: float, end: float) -> tuple[float, str, list[str]]:
+    overlapping = [s for s in segments if s["end"] > start and s["start"] < end]
+    text = " ".join(s["text"] for s in overlapping).strip()
+    if not text:
+        return 0.0, "", []
+    words = re.findall(r"[\wÄÖÜäöüß'-]+", text.lower())
+    if not words:
+        return 0.0, text[:280], []
+    duration = max(1.0, end - start)
+    spoken_seconds = sum(max(0.0, min(end, s["end"]) - max(start, s["start"])) for s in overlapping)
+    coverage = min(1.0, spoken_seconds / duration)
+    word_density = min(1.0, len(words) / max(8.0, duration * 1.8))
+    emphasis_terms = {
+        "aber", "warum", "unglaublich", "plötzlich", "geheimnis", "fehler",
+        "achtung", "wichtig", "krass", "niemals", "endlich", "deshalb",
+        "however", "why", "insane", "secret", "mistake", "wait", "never",
+        "finally", "because", "actually",
+    }
+    emphasis = min(1.0, sum(1 for word in words if word in emphasis_terms) / 2.0)
+    punctuation = min(1.0, (text.count("?") + text.count("!") + text.count("…")) / 3.0)
+    score = 0.35 * coverage + 0.35 * word_density + 0.20 * emphasis + 0.10 * punctuation
+    reasons = []
+    if coverage >= 0.35:
+        reasons.append("zusammenhängende Sprachpassage erkannt")
+    if emphasis > 0:
+        reasons.append("markante Begriffe im Transkript")
+    if punctuation > 0:
+        reasons.append("Frage- oder Ausrufstruktur im Transkript")
+    return min(1.0, score), text[:280], reasons
+
+
 def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, project_id: str) -> list[dict[str, Any]]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    energies, duration = audio_energy(path, output_dir)
-    if duration <= 0 or not energies:
-        raise RuntimeError("Die Quelldatei enthält keine analysierbare Audiospur.")
+    wav_path = output_dir / "analysis-audio.wav"
+    try:
+        energies, duration = audio_energy(path, output_dir)
+        if duration <= 0 or not energies:
+            raise RuntimeError("Die Quelldatei enthält keine analysierbare Audiospur.")
+        transcript = transcribe_audio(wav_path)
+    finally:
+        wav_path.unlink(missing_ok=True)
+
     scenes = scene_times(path)
     window = max(10, min(clip_seconds, int(duration)))
     if duration <= window:
@@ -90,13 +152,33 @@ def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, pr
         audio_score = min(1.0, (avg / max(baseline, 0.004)) / 2.5)
         dynamics_score = min(1.0, variation * 5 + max(0, peak - avg) * 2)
         scene_score = min(1.0, scene_count / max(2, window / 20))
-        score = round(100 * (0.55 * audio_score + 0.30 * dynamics_score + 0.15 * scene_score), 1)
         reasons = []
-        if avg > baseline * 1.25: reasons.append("überdurchschnittliche Audioaktivität")
-        if variation > 0.025: reasons.append("deutliche Audiodynamik")
-        if scene_count: reasons.append(f"{scene_count} erkannte Szenenwechsel")
-        if not reasons: reasons.append("stabile Audioaktivität")
-        candidates.append({"start_seconds": round(start, 2), "end_seconds": round(end, 2), "score": score, "reasons": reasons})
+        if avg > baseline * 1.25:
+            reasons.append("überdurchschnittliche Audioaktivität")
+        if variation > 0.025:
+            reasons.append("deutliche Audiodynamik")
+        if scene_count:
+            reasons.append(f"{scene_count} erkannte Szenenwechsel")
+
+        transcript_score = 0.0
+        excerpt = ""
+        if transcript is not None:
+            transcript_score, excerpt, transcript_reasons = transcript_features(transcript, start, end)
+            reasons.extend(transcript_reasons)
+            score = 100 * (0.40 * audio_score + 0.20 * dynamics_score + 0.10 * scene_score + 0.30 * transcript_score)
+        else:
+            score = 100 * (0.55 * audio_score + 0.30 * dynamics_score + 0.15 * scene_score)
+        if not reasons:
+            reasons.append("stabile Audioaktivität")
+        item = {
+            "start_seconds": round(start, 2), "end_seconds": round(end, 2),
+            "score": round(score, 1), "reasons": reasons,
+        }
+        if transcript is not None:
+            item["transcript_score"] = round(transcript_score * 100, 1)
+            item["transcript_excerpt"] = excerpt
+        candidates.append(item)
+
     candidates.sort(key=lambda item: item["score"], reverse=True)
     selected = []
     for item in candidates:
@@ -105,27 +187,6 @@ def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, pr
         if clip_count > 0 and len(selected) >= clip_count:
             break
     selected.sort(key=lambda item: item["start_seconds"])
-    for index, item in enumerate(selected, 1):
+    for item in selected:
         item["id"] = str(uuid.uuid4())
     return selected
-
-
-def render(path: Path, output: Path, start: float, end: float, aspect: str, quality: int) -> dict[str, Any]:
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("FFmpeg ist nicht installiert.")
-    dimensions = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
-    if aspect not in dimensions:
-        raise RuntimeError("Ungültiges Seitenverhältnis.")
-    width, height = dimensions[aspect]
-    scale = min(quality / 1080, 1.0)
-    width, height = int(width * scale), int(height * scale)
-    width, height = width - width % 2, height - height % 2
-    duration = max(1, end - start)
-    vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"
-    command = [ffmpeg, "-y", "-ss", f"{start:.3f}", "-i", str(path), "-t", f"{duration:.3f}", "-map", "0:v:0", "-map", "0:a?", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output)]
-    result = run(command, timeout=7200)
-    if result.returncode or not output.exists() or output.stat().st_size == 0:
-        output.unlink(missing_ok=True)
-        raise RuntimeError("FFmpeg-Export fehlgeschlagen: " + result.stderr[-1200:])
-    return {"path": str(output), "size_bytes": output.stat().st_size, "duration_seconds": round(duration, 2), "aspect_ratio": aspect, "resolution": f"{width}x{height}"}
