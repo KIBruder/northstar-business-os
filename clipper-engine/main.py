@@ -112,7 +112,7 @@ def recover_interrupted_jobs() -> None:
             """UPDATE jobs SET status='failed',stage='Nicht wiederherstellbarer Alt-Job',
                error='Dieser Job besitzt keine gespeicherten Auftragsdaten und kann nicht wiederhergestellt werden.',
                lease_owner=NULL,lease_expires_at=NULL,updated_at=?
-               WHERE status='queued' AND payload_json IS NULL""", (stamp,),
+               WHERE status IN ('queued','running') AND payload_json IS NULL""", (stamp,),
         )
         db.execute(
             """UPDATE jobs SET status=CASE WHEN attempt_count >= max_attempts THEN 'failed' ELSE 'queued' END,
