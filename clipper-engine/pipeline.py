@@ -199,6 +199,98 @@ def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, pr
     return selected
 
 
+
+def _timeline_expression(samples: list[tuple[float, float]]) -> str:
+    """Build a piecewise-linear FFmpeg expression from clip-relative samples."""
+    if not samples:
+        raise ValueError("At least one tracking sample is required")
+    if len(samples) == 1:
+        return f"{samples[0][1]:.2f}"
+    expression = f"{samples[-1][1]:.2f}"
+    for index in range(len(samples) - 2, -1, -1):
+        t0, v0 = samples[index]
+        t1, v1 = samples[index + 1]
+        if t1 <= t0:
+            continue
+        interpolation = f"({v0:.2f}+({v1-v0:.2f})*(t-{t0:.3f})/{t1-t0:.3f})"
+        expression = f"if(lt(t\\,{t1:.3f})\\,{interpolation}\\,{expression})"
+    return expression
+
+
+def face_tracking_crop(path: Path, start: float, end: float, aspect: str) -> tuple[int, int, str, str]:
+    """Detect frontal faces at 1 Hz and return a smoothed, time-varying crop."""
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError("Face-aware Reframing benötigt OpenCV. Installiere clipper-engine/requirements-vision.txt.") from exc
+
+    capture = cv2.VideoCapture(str(path))
+    if not capture.isOpened():
+        raise RuntimeError("Video konnte für die Gesichtserkennung nicht geöffnet werden.")
+    source_width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    source_height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if source_width < 2 or source_height < 2:
+        capture.release()
+        raise RuntimeError("Videoauflösung für Face-aware Reframing konnte nicht gelesen werden.")
+    target_ratio = {"9:16": 9 / 16, "16:9": 16 / 9, "1:1": 1.0}[aspect]
+    if source_width / source_height > target_ratio:
+        crop_height = source_height
+        crop_width = max(2, min(source_width, int(round(source_height * target_ratio))))
+    else:
+        crop_width = source_width
+        crop_height = max(2, min(source_height, int(round(source_width / target_ratio))))
+
+    classifier_path = str(Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml")
+    classifier = cv2.CascadeClassifier(classifier_path)
+    if classifier.empty():
+        capture.release()
+        raise RuntimeError("OpenCV-Gesichtsmodell konnte nicht geladen werden.")
+
+    duration = max(1.0, end - start)
+    samples: list[tuple[float, float, float]] = []
+    previous = None
+    try:
+        for elapsed in range(0, int(math.ceil(duration)) + 1):
+            if elapsed > duration:
+                break
+            capture.set(cv2.CAP_PROP_POS_MSEC, (start + elapsed) * 1000)
+            ok, frame = capture.read()
+            if not ok:
+                continue
+            height, width = frame.shape[:2]
+            factor = min(1.0, 640 / max(width, height))
+            resized = cv2.resize(frame, (max(1, int(width * factor)), max(1, int(height * factor)))) if factor < 1 else frame
+            gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+            faces = classifier.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(24, 24))
+            if len(faces):
+                choices = []
+                for x, y, w, h in faces:
+                    center_x, center_y = (x + w / 2) / factor, (y + h / 2) / factor
+                    continuity = 0 if previous is None else math.hypot(center_x - previous[0], center_y - previous[1]) / max(source_width, source_height)
+                    choices.append((w * h / (1 + continuity * 8), center_x, center_y))
+                _, center_x, center_y = max(choices)
+                previous = (center_x, center_y)
+                samples.append((float(elapsed), center_x, center_y))
+            elif previous is not None:
+                samples.append((float(elapsed), previous[0], previous[1]))
+    finally:
+        capture.release()
+
+    if not samples:
+        raise RuntimeError("Kein frontales Gesicht erkannt. Nutze 'Gesamtes Bild' oder 'Bildfüllend' als Alternative.")
+    if samples[0][0] > 0:
+        samples.insert(0, (0.0, samples[0][1], samples[0][2]))
+    smoothed = []
+    for index, (stamp, _x, _y) in enumerate(samples):
+        neighbors = samples[max(0, index - 1):min(len(samples), index + 2)]
+        smoothed.append((stamp, sum(item[1] for item in neighbors) / len(neighbors),
+                         sum(item[2] for item in neighbors) / len(neighbors)))
+    x_samples, y_samples = [], []
+    for stamp, center_x, center_y in smoothed:
+        x_samples.append((stamp, max(0.0, min(source_width - crop_width, center_x - crop_width / 2))))
+        y_samples.append((stamp, max(0.0, min(source_height - crop_height, center_y - crop_height * 0.36))))
+    return crop_width, crop_height, _timeline_expression(x_samples), _timeline_expression(y_samples)
+
 def render(path: Path, output: Path, start: float, end: float, aspect: str, quality: int, framing: str = "crop") -> dict[str, Any]:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -206,7 +298,7 @@ def render(path: Path, output: Path, start: float, end: float, aspect: str, qual
     dimensions = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
     if aspect not in dimensions:
         raise RuntimeError("Ungültiges Seitenverhältnis.")
-    if framing not in {"crop", "blur"}:
+    if framing not in {"crop", "blur", "face"}:
         raise RuntimeError("Ungültige Bildanpassung.")
     width, height = dimensions[aspect]
     scale = min(quality / 1080, 1.0)
@@ -216,6 +308,10 @@ def render(path: Path, output: Path, start: float, end: float, aspect: str, qual
     command = [ffmpeg, "-y", "-ss", f"{start:.3f}", "-i", str(path), "-t", f"{duration:.3f}", "-map", "0:a?"]
     if framing == "crop":
         command += ["-map", "0:v:0", "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"]
+    elif framing == "face":
+        crop_width, crop_height, x_expr, y_expr = face_tracking_crop(path, start, end, aspect)
+        vf = f"crop={crop_width}:{crop_height}:x='{x_expr}':y='{y_expr}',scale={width}:{height},setsar=1"
+        command += ["-map", "0:v:0", "-vf", vf]
     else:
         graph = (f"[0:v]split=2[bg][fg];[bg]scale={width}:{height}:force_original_aspect_ratio=increase,"
                  f"crop={width}:{height},boxblur=20:2[background];"
