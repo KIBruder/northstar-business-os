@@ -48,6 +48,7 @@ Do not expose this service to a network without authentication. Set a random tok
 - `GET /api/jobs/{job_id}`: job state and progress.
 - `GET /api/projects/{project_id}/candidates`: ranked candidates, reasons, and optional transcript excerpts.
 - `POST /api/projects/{project_id}/candidates/{candidate_id}/render`: JSON `{ "aspect_ratio": "9:16", "quality": 1080 }`.
+- `POST /api/projects/{project_id}/render-batch`: JSON `{ "candidate_ids": ["…"], "aspect_ratio": "9:16", "quality": 1080 }`; queues up to 50 selected candidates as one batch job and reports completed export IDs.
 - `GET /api/exports/{export_id}/download`: authenticated MP4 download.
 
 ## Persistent job queue
@@ -55,7 +56,7 @@ Analysis and render requests are written to SQLite before the API responds. The 
 
 Configure `CLIPPER_WORKER_LEASE_SECONDS` (default 90), `CLIPPER_MAX_JOB_ATTEMPTS` (default 3), and `CLIPPER_QUEUE_POLL_SECONDS` to tune the worker. Run one Uvicorn process for now: the SQLite claim is atomic, but the worker lifecycle is still in-process and has not yet been validated as a multi-process deployment. Analysis candidates and the completed state are committed together; export metadata and render completion are also committed together.
 
-Execution remains **at-least-once**, not exactly-once. A crash during an external FFmpeg operation can cause it to run again. The in-process heartbeat protects long jobs from false lease expiry, but a separately supervised worker service, orphan-file cleanup and production crash testing remain future hardening work.
+Execution remains **at-least-once**, not exactly-once. A crash during an external FFmpeg operation can cause it to run again. The in-process heartbeat protects long jobs from false lease expiry. Batch rendering exports selected candidates sequentially in one durable job; completed files remain available if a later item fails, and the job reports the successful export IDs. The Studio exposes candidate checkboxes and a batch-render action. A conservative cleanup pass removes only work directories older than 24 hours whose job is terminal or missing; active/queued jobs and source media/exports are never removed. A separately supervised worker service and production crash testing remain future hardening work.
 
 ## Current limitations
 - Transcript scoring uses transparent lexical and timing heuristics; it is not deep semantic or viral-moment classification.
