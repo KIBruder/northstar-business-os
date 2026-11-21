@@ -316,11 +316,14 @@ def run_analysis_job(job_id: str, project_id: str, asset_id: str, source_path: s
             raise RuntimeError("Quellmedium wurde nicht gefunden.")
         work = DATA_DIR / "work" / job_id
         candidates = analyze(Path(source_path), work, settings["clip_seconds"], settings["clip_count"], project_id)
+        result_payload = {"candidate_count": len(candidates), "method": "audio + scene + optional local transcript heuristic", "note": "Transkriptbewertung ist eine transparente Heuristik und keine zuverlässige semantische Viral-Moment-Erkennung."}
         with connect() as db:
+            db.execute("DELETE FROM candidates WHERE job_id=?", (job_id,))
             for item in candidates:
-                db.execute("INSERT OR REPLACE INTO candidates(id,job_id,project_id,asset_id,start_seconds,end_seconds,score,reasons_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                db.execute("INSERT INTO candidates(id,job_id,project_id,asset_id,start_seconds,end_seconds,score,reasons_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                            (item["id"], job_id, project_id, asset_id, item["start_seconds"], item["end_seconds"], item["score"], json.dumps(item["reasons"]), now_iso()))
-        update_job(job_id, "completed", 100, "Analyse abgeschlossen", result={"candidate_count": len(candidates), "method": "audio energy + scene-change heuristic", "note": "Signalbasierte Vorauswahl; keine semantische KI- oder Transkriptanalyse."})
+            db.execute("UPDATE jobs SET status='completed',progress=100,stage='Analyse abgeschlossen',error=NULL,result_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(result_payload), now_iso(), job_id))
     except Exception as exc:
         update_job(job_id, "failed", 100, "Analyse fehlgeschlagen", error=str(exc)[:2000])
 
@@ -377,10 +380,12 @@ def run_render_job(job_id: str, project_id: str, candidate_id: str, source_path:
         export_id = str(uuid.uuid4())
         output = output_dir / f"{export_id}.mp4"
         result = render(Path(source_path), output, candidate["start_seconds"], candidate["end_seconds"], settings["aspect_ratio"], settings["quality"])
+        result_payload = {"export_id": export_id, **result}
         with connect() as db:
             db.execute("INSERT INTO exports(id,project_id,candidate_id,path,duration_seconds,aspect_ratio,resolution,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
                        (export_id, project_id, candidate_id, result["path"], result["duration_seconds"], result["aspect_ratio"], result["resolution"], result["size_bytes"], now_iso()))
-        update_job(job_id, "completed", 100, "Export abgeschlossen", result={"export_id": export_id, **result})
+            db.execute("UPDATE jobs SET status='completed',progress=100,stage='Export abgeschlossen',error=NULL,result_json=?,updated_at=? WHERE id=?",
+                       (json.dumps(result_payload), now_iso(), job_id))
     except Exception as exc:
         update_job(job_id, "failed", 100, "Export fehlgeschlagen", error=str(exc)[:2000])
 
