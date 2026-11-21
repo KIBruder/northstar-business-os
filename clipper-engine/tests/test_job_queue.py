@@ -171,7 +171,7 @@ def test_batch_render_job_exports_each_candidate_and_completes(tmp_path, monkeyp
             "INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
             ("batch-1", "project-1", "batch_render", "running", 1, "Worker", "{}", main.now_iso(), main.now_iso()),
         )
-    def fake_render(source, output, start, end, aspect, quality):
+    def fake_render(source, output, start, end, aspect, quality, framing="crop"):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mock-video")
         return {"path": str(output), "duration_seconds": end-start, "aspect_ratio": aspect,
