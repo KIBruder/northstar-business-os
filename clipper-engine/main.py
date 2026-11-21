@@ -158,12 +158,41 @@ def heartbeat_job(job_id: str, worker_id: str) -> bool:
     return changed == 1
 
 
+def cleanup_orphan_workdirs(min_age_hours: int = 24) -> int:
+    """Remove only stale work directories belonging to terminal or missing jobs."""
+    work_root = DATA_DIR / "work"
+    if not work_root.is_dir():
+        return 0
+    cutoff = datetime.now(timezone.utc).timestamp() - max(1, min_age_hours) * 3600
+    removed = 0
+    for directory in work_root.iterdir():
+        if not directory.is_dir():
+            continue
+        try:
+            if directory.stat().st_mtime > cutoff:
+                continue
+            with connect() as db:
+                job = db.execute("SELECT status FROM jobs WHERE id=?", (directory.name,)).fetchone()
+            if job and job["status"] not in {"completed", "failed"}:
+                continue
+            shutil.rmtree(directory)
+            removed += 1
+        except FileNotFoundError:
+            continue
+        except OSError:
+            # Cleanup is best-effort and must never interrupt media processing.
+            continue
+    return removed
+
+
 def dispatch_job(job: dict[str, Any]) -> None:
     payload = json.loads(job["payload_json"] or "{}")
     if job["kind"] == "analysis":
         run_analysis_job(job["id"], job["project_id"], payload["asset_id"], payload["source_path"], payload["settings"])
     elif job["kind"] == "render":
         run_render_job(job["id"], job["project_id"], payload["candidate_id"], payload["source_path"], payload["candidate"], payload["settings"])
+    elif job["kind"] == "batch_render":
+        run_batch_render_job(job["id"], job["project_id"], payload["items"], payload["settings"])
     else:
         update_job(job["id"], "failed", 100, "Unbekannter Auftragstyp", error=f"Unsupported job kind: {job['kind']}")
 
@@ -177,6 +206,7 @@ def worker_loop() -> None:
             import time
             if time.monotonic() - last_recovery >= 10:
                 recover_interrupted_jobs()
+                cleanup_orphan_workdirs()
                 last_recovery = time.monotonic()
             job = claim_next_job(worker_id)
             if job:
@@ -456,6 +486,68 @@ def start_render(project_id: str, candidate_id: str, payload: RenderInput, x_cli
         db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?,?)",
                    (job_id, project_id, "render", json.dumps(job_payload), stamp, stamp))
     return {"job_id": job_id, "status": "queued"}
+
+class BatchRenderInput(RenderInput):
+    candidate_ids: list[str] = Field(min_length=1, max_length=50)
+
+
+def run_batch_render_job(job_id: str, project_id: str, items: list[dict[str, Any]], settings: dict[str, Any]) -> None:
+    from pipeline import render
+    export_ids: list[str] = []
+    try:
+        total = len(items)
+        output_dir = DATA_DIR / "exports" / project_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for index, item in enumerate(items, start=1):
+            update_job(job_id, "running", int((index - 1) * 100 / total), f"Rendere Clip {index}/{total}")
+            export_id = str(uuid.uuid4())
+            output = output_dir / f"{export_id}.mp4"
+            result = render(
+                Path(item["source_path"]), output,
+                item["start_seconds"], item["end_seconds"],
+                settings["aspect_ratio"], settings["quality"],
+            )
+            with connect() as db:
+                db.execute(
+                    "INSERT INTO exports(id,project_id,candidate_id,path,duration_seconds,aspect_ratio,resolution,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                    (export_id, project_id, item["candidate_id"], result["path"],
+                     result["duration_seconds"], result["aspect_ratio"], result["resolution"],
+                     result["size_bytes"], now_iso()),
+                )
+            export_ids.append(export_id)
+        update_job(job_id, "completed", 100, f"{total} Clips exportiert",
+                   result={"export_ids": export_ids, "export_count": len(export_ids)})
+    except Exception as exc:
+        update_job(job_id, "failed", 100, "Batch-Export fehlgeschlagen",
+                   error=f"{str(exc)[:1800]} | Bereits exportiert: {len(export_ids)}/{len(items)}",
+                   result={"export_ids": export_ids, "export_count": len(export_ids)})
+
+
+@app.post("/api/projects/{project_id}/render-batch")
+def start_batch_render(project_id: str, payload: BatchRenderInput, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    ids = list(dict.fromkeys(payload.candidate_ids))
+    if len(ids) != len(payload.candidate_ids):
+        raise HTTPException(status_code=422, detail="Duplicate candidate IDs are not allowed")
+    with connect() as db:
+        rows = db.execute(
+            f"SELECT c.id,c.start_seconds,c.end_seconds,a.path FROM candidates c JOIN assets a ON a.id=c.asset_id WHERE c.project_id=? AND c.id IN ({','.join('?' for _ in ids)})",
+            (project_id, *ids),
+        ).fetchall()
+        if len(rows) != len(ids):
+            raise HTTPException(status_code=404, detail="One or more clip candidates were not found in this project")
+        by_id = {row["id"]: row for row in rows}
+        items = [{"candidate_id": candidate_id, "start_seconds": by_id[candidate_id]["start_seconds"],
+                  "end_seconds": by_id[candidate_id]["end_seconds"], "source_path": by_id[candidate_id]["path"]}
+                 for candidate_id in ids]
+        job_id = str(uuid.uuid4())
+        stamp = now_iso()
+        job_payload = {"items": items, "settings": {"aspect_ratio": payload.aspect_ratio, "quality": payload.quality}}
+        db.execute(
+            "INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?,?)",
+            (job_id, project_id, "batch_render", json.dumps(job_payload), stamp, stamp),
+        )
+    return {"job_id": job_id, "status": "queued", "clip_count": len(ids)}
 
 
 @app.get("/api/exports/{export_id}/download")
