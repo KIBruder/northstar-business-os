@@ -30,7 +30,7 @@ if HOST not in {"127.0.0.1", "localhost", "::1"} and len(API_TOKEN) < 32:
 app = FastAPI(title="CLIP-FINDER PRO Local Engine", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_origins=[origin.strip() for origin in os.environ.get("CLIPPER_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",") if origin.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "X-Clipper-Token"],
