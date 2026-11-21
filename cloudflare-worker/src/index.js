@@ -147,6 +147,7 @@ async function authApi(request, env, cors, action) {
  const db=env.DB||env.db;
  if(!db) return json({error:'D1-Datenbank ist nicht konfiguriert.'},503,cors);
  if(!env.NORTHSTAR_AUTH_SECRET || String(env.NORTHSTAR_AUTH_SECRET).length<32) return json({error:'NORTHSTAR_AUTH_SECRET fehlt oder ist zu kurz (mindestens 32 Zeichen).'},503,cors);
+ let stage='start';
  try {
   if(action==='me') {
    const subject=await verifySessionToken(request,env);
@@ -161,12 +162,15 @@ async function authApi(request, env, cors, action) {
   if(password.length<12||password.length>128) return json({error:'Das Passwort muss mindestens 12 und höchstens 128 Zeichen lang sein.'},400,cors);
   let user;
   if(action==='register') {
+   stage='count-users';
    const existing=await db.prepare('SELECT COUNT(*) AS count FROM users').first();
    if(Number(existing?.count||0)>0)return json({error:'Das private Northstar-Konto ist bereits eingerichtet. Weitere Registrierungen sind deaktiviert.'},403,cors);
+   stage='hash-password';
    const salt=crypto.getRandomValues(new Uint8Array(16));
    const hash=await hashPassword(password,salt);
    const id=crypto.randomUUID(), now=new Date().toISOString();
    try {
+    stage='insert-user';
     await db.prepare('INSERT INTO users (id,email,password_salt,password_hash,created_at,updated_at,disabled_at) VALUES (?,?,?,?,?,?,NULL)').bind(id,email,toBase64Url(salt),toBase64Url(hash),now,now).run();
    } catch(error) {
     if(/registration closed/i.test(String(error.message||error)))return json({error:'Das private Northstar-Konto ist bereits eingerichtet.'},403,cors);
@@ -180,10 +184,12 @@ async function authApi(request, env, cors, action) {
    const actual=await hashPassword(password,fromBase64Url(user.password_salt));
    if(!constantTimeEqual(actual,fromBase64Url(user.password_hash)))return json({error:'E-Mail-Adresse oder Passwort ist falsch.'},401,cors);
   }
+  stage='create-session';
   const token=await createSessionToken(user.id,env);
   return json({token,tokenType:'Bearer',expiresIn:604800,user:{id:user.id,email:user.email,createdAt:user.created_at}},200,cors);
  } catch(error) {
-  return json({error:'Authentifizierung fehlgeschlagen.',detail:String(error.message||error)},500,cors);
+  console.error('[northstar-auth] request failed', { action, stage, name:String(error?.name||'Error'), message:String(error?.message||error) });
+  return json({error:'Authentifizierung fehlgeschlagen.',detail:'Interner Fehler bei Verarbeitungsschritt: '+stage},500,cors);
  }
 }
 async function hashPassword(password,salt) {
