@@ -11,9 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field\nfrom fastapi.responses import FileResponse
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("CLIPPER_DATA_DIR", APP_DIR / "data")).resolve()
@@ -195,3 +195,132 @@ def get_project(project_id: str, x_clipper_token: str | None = Header(default=No
             FROM assets WHERE project_id=? ORDER BY created_at""", (project_id,)
         ).fetchall()
     return {"project": dict(project), "assets": [dict(row) for row in assets]}
+
+
+class AnalyzeInput(BaseModel):
+    clip_seconds: int = Field(default=60, ge=10, le=600)
+    clip_count: int = Field(default=5, ge=0, le=100)
+
+
+class RenderInput(BaseModel):
+    aspect_ratio: str = "9:16"
+    quality: int = Field(default=1080, ge=720, le=1080)
+
+
+def update_job(job_id: str, status: str, progress: int, stage: str, error: str | None = None, result: dict[str, Any] | None = None) -> None:
+    with connect() as db:
+        db.execute("UPDATE jobs SET status=?,progress=?,stage=?,error=?,result_json=?,updated_at=? WHERE id=?",
+                   (status, progress, stage, error, json.dumps(result) if result is not None else None, now_iso(), job_id))
+
+
+def run_analysis_job(job_id: str, project_id: str, asset_id: str, source_path: str, settings: dict[str, Any]) -> None:
+    from pipeline import analyze
+    try:
+        update_job(job_id, "running", 5, "Audio wird analysiert")
+        with connect() as db:
+            asset = db.execute("SELECT source_name FROM assets WHERE id=?", (asset_id,)).fetchone()
+        if not asset:
+            raise RuntimeError("Quellmedium wurde nicht gefunden.")
+        work = DATA_DIR / "work" / job_id
+        candidates = analyze(Path(source_path), work, settings["clip_seconds"], settings["clip_count"], project_id)
+        with connect() as db:
+            for item in candidates:
+                db.execute("INSERT OR REPLACE INTO candidates(id,job_id,project_id,asset_id,start_seconds,end_seconds,score,reasons_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                           (item["id"], job_id, project_id, asset_id, item["start_seconds"], item["end_seconds"], item["score"], json.dumps(item["reasons"]), now_iso()))
+        update_job(job_id, "completed", 100, "Analyse abgeschlossen", result={"candidate_count": len(candidates), "method": "audio energy + scene-change heuristic", "note": "Signalbasierte Vorauswahl; keine semantische KI- oder Transkriptanalyse."})
+    except Exception as exc:
+        update_job(job_id, "failed", 100, "Analyse fehlgeschlagen", error=str(exc)[:2000])
+
+
+@app.post("/api/projects/{project_id}/analyze")
+def start_analysis(project_id: str, payload: AnalyzeInput, background: BackgroundTasks, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    with connect() as db:
+        asset = db.execute("SELECT * FROM assets WHERE project_id=? ORDER BY created_at DESC LIMIT 1", (project_id,)).fetchone()
+        if not asset:
+            raise HTTPException(status_code=404, detail="Project has no uploaded media")
+        active = db.execute("SELECT id FROM jobs WHERE project_id=? AND kind='analysis' AND status IN ('queued','running')", (project_id,)).fetchone()
+        if active:
+            raise HTTPException(status_code=409, detail="An analysis job is already running for this project")
+        job_id = str(uuid.uuid4())
+        stamp = now_iso()
+        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?)",
+                   (job_id, project_id, "analysis", stamp, stamp))
+    background.add_task(run_analysis_job, job_id, project_id, asset["id"], asset["path"], payload.model_dump())
+    return {"job_id": job_id, "status": "queued", "stage": "Warteschlange"}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    with connect() as db:
+        job = db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    result = dict(job)
+    result["result"] = json.loads(result.pop("result_json")) if result.get("result_json") else None
+    return result
+
+
+@app.get("/api/projects/{project_id}/candidates")
+def list_candidates(project_id: str, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    with connect() as db:
+        rows = db.execute("SELECT * FROM candidates WHERE project_id=? ORDER BY score DESC", (project_id,)).fetchall()
+    items = []
+    for row in rows:
+        item = dict(row)
+        item["reasons"] = json.loads(item.pop("reasons_json"))
+        items.append(item)
+    return {"candidates": items}
+
+
+def run_render_job(job_id: str, project_id: str, candidate_id: str, source_path: str, candidate: dict[str, Any], settings: dict[str, Any]) -> None:
+    from pipeline import render
+    try:
+        update_job(job_id, "running", 10, "Clip wird gerendert")
+        output_dir = DATA_DIR / "exports" / project_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        export_id = str(uuid.uuid4())
+        output = output_dir / f"{export_id}.mp4"
+        result = render(Path(source_path), output, candidate["start_seconds"], candidate["end_seconds"], settings["aspect_ratio"], settings["quality"])
+        with connect() as db:
+            db.execute("INSERT INTO exports(id,project_id,candidate_id,path,duration_seconds,aspect_ratio,resolution,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                       (export_id, project_id, candidate_id, result["path"], result["duration_seconds"], result["aspect_ratio"], result["resolution"], result["size_bytes"], now_iso()))
+        update_job(job_id, "completed", 100, "Export abgeschlossen", result={"export_id": export_id, **result})
+    except Exception as exc:
+        update_job(job_id, "failed", 100, "Export fehlgeschlagen", error=str(exc)[:2000])
+
+
+@app.post("/api/projects/{project_id}/candidates/{candidate_id}/render")
+def start_render(project_id: str, candidate_id: str, payload: RenderInput, background: BackgroundTasks, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    with connect() as db:
+        row = db.execute("SELECT c.*,a.path FROM candidates c JOIN assets a ON a.id=c.asset_id WHERE c.id=? AND c.project_id=?", (candidate_id, project_id)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Clip candidate not found")
+        job_id = str(uuid.uuid4())
+        stamp = now_iso()
+        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?)",
+                   (job_id, project_id, "render", stamp, stamp))
+    candidate = {"start_seconds": row["start_seconds"], "end_seconds": row["end_seconds"]}
+    background.add_task(run_render_job, job_id, project_id, candidate_id, row["path"], candidate, payload.model_dump())
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/api/exports/{export_id}/download")
+def download_export(export_id: str, x_clipper_token: str | None = Header(default=None)):
+    require_token(x_clipper_token)
+    with connect() as db:
+        row = db.execute("SELECT * FROM exports WHERE id=?", (export_id,)).fetchone()
+    if not row or not Path(row["path"]).is_file():
+        raise HTTPException(status_code=404, detail="Export not found")
+    return FileResponse(row["path"], media_type="video/mp4", filename=f"clip-{export_id[:8]}.mp4")
+
+
+@app.get("/api/projects/{project_id}/exports")
+def list_exports(project_id: str, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
+    with connect() as db:
+        rows = db.execute("SELECT id,candidate_id,duration_seconds,aspect_ratio,resolution,size_bytes,created_at FROM exports WHERE project_id=? ORDER BY created_at DESC", (project_id,)).fetchall()
+    return {"exports": [dict(row) for row in rows]}
