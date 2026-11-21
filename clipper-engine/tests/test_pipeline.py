@@ -84,3 +84,31 @@ def test_render_rejects_unknown_framing(tmp_path, monkeypatch):
         assert "Bildanpassung" in str(exc)
     else:
         raise AssertionError("unknown framing must be rejected")
+
+
+def test_timeline_expression_interpolates_between_tracking_samples():
+    expression = pipeline._timeline_expression([(0.0, 10.0), (2.0, 30.0), (4.0, 50.0)])
+    assert "lt(t" in expression
+    assert "10.00" in expression
+    assert "20.00" in expression
+    assert "50.00" in expression
+
+
+def test_timeline_expression_handles_single_sample():
+    assert pipeline._timeline_expression([(0.0, 42.5)]) == "42.50"
+
+
+def test_face_tracking_requires_optional_opencv(tmp_path, monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+    def blocked(name, *args, **kwargs):
+        if name == "cv2":
+            raise ImportError("not installed")
+        return real_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", blocked)
+    try:
+        pipeline.face_tracking_crop(Path("source.mp4"), 0, 10, "9:16")
+    except RuntimeError as exc:
+        assert "requirements-vision.txt" in str(exc)
+    else:
+        raise AssertionError("missing OpenCV must be reported")
