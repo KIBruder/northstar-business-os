@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import array
+from functools import lru_cache
 import math
 import os
 import re
@@ -46,6 +47,12 @@ def audio_energy(path: Path, work: Path) -> tuple[list[float], float]:
     return energies, frames / rate if rate else 0.0
 
 
+@lru_cache(maxsize=2)
+def load_whisper_model(model_size: str):
+    from faster_whisper import WhisperModel
+    return WhisperModel(model_size, device="cpu", compute_type="int8")
+
+
 def transcribe_audio(wav_path: Path) -> list[dict[str, Any]] | None:
     """Optional local ASR. None means faster-whisper is not installed."""
     try:
@@ -55,7 +62,7 @@ def transcribe_audio(wav_path: Path) -> list[dict[str, Any]] | None:
 
     model_size = os.environ.get("CLIPPER_WHISPER_MODEL", "small")
     language = os.environ.get("CLIPPER_WHISPER_LANGUAGE", "").strip() or None
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
+    model = load_whisper_model(model_size)
     segments, _info = model.transcribe(
         str(wav_path), language=language, vad_filter=True, beam_size=3,
         condition_on_previous_text=False,
