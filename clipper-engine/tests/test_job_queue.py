@@ -135,3 +135,59 @@ def test_lease_columns_are_migrated_on_existing_database(tmp_path, monkeypatch):
     with main.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)")}
     assert {"payload_json", "lease_owner", "lease_expires_at", "attempt_count", "max_attempts"}.issubset(columns)
+
+
+
+def test_orphan_cleanup_removes_only_old_terminal_workdirs(tmp_path, monkeypatch):
+    setup_db(tmp_path, monkeypatch)
+    work = tmp_path / "work"
+    work.mkdir()
+    terminal = work / "done-job"
+    active = work / "active-job"
+    missing = work / "missing-job"
+    for folder in (terminal, active, missing):
+        folder.mkdir()
+        (folder / "artifact.tmp").write_text("temporary")
+    insert_job("done-job", status="completed", payload={"kind": "analysis"})
+    insert_job("active-job", status="running", payload={"kind": "analysis"})
+    import os, time
+    old = time.time() - 48 * 3600
+    for folder in (terminal, active, missing):
+        os.utime(folder, (old, old))
+
+    removed = main.cleanup_orphan_workdirs(min_age_hours=24)
+
+    assert removed == 2
+    assert not terminal.exists()
+    assert active.exists()
+    assert not missing.exists()
+
+
+def test_batch_render_job_exports_each_candidate_and_completes(tmp_path, monkeypatch):
+    setup_db(tmp_path, monkeypatch)
+    import pipeline
+    with main.connect() as db:
+        db.execute(
+            "INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)",
+            ("batch-1", "project-1", "batch_render", "running", 1, "Worker", "{}", main.now_iso(), main.now_iso()),
+        )
+    def fake_render(source, output, start, end, aspect, quality):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mock-video")
+        return {"path": str(output), "duration_seconds": end-start, "aspect_ratio": aspect,
+                "resolution": "1080x1920", "size_bytes": output.stat().st_size}
+    monkeypatch.setattr(pipeline, "render", fake_render)
+    items = [
+        {"candidate_id": "candidate-a", "source_path": "source.mp4", "start_seconds": 0, "end_seconds": 20},
+        {"candidate_id": "candidate-b", "source_path": "source.mp4", "start_seconds": 30, "end_seconds": 50},
+    ]
+
+    main.run_batch_render_job("batch-1", "project-1", items, {"aspect_ratio": "9:16", "quality": 1080})
+
+    with main.connect() as db:
+        job = db.execute("SELECT * FROM jobs WHERE id='batch-1'").fetchone()
+        exports = db.execute("SELECT * FROM exports WHERE project_id='project-1'").fetchall()
+    assert job["status"] == "completed"
+    assert job["progress"] == 100
+    assert len(exports) == 2
+    assert json.loads(job["result_json"])["export_count"] == 2
