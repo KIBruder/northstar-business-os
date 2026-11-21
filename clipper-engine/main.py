@@ -86,6 +86,8 @@ def init_db() -> None:
 def startup() -> None:
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
+    with connect() as db:
+        db.execute("UPDATE jobs SET status='failed',stage='Serverneustart – Job unterbrochen',error='Der Engine-Prozess wurde während der Verarbeitung beendet. Bitte erneut starten.',updated_at=? WHERE status IN ('queued','running')", (now_iso(),))
 
 
 def require_token(token: str | None) -> None:
