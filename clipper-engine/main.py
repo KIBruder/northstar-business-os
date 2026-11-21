@@ -380,6 +380,7 @@ class AnalyzeInput(BaseModel):
 class RenderInput(BaseModel):
     aspect_ratio: str = "9:16"
     quality: int = Field(default=1080, ge=720, le=1080)
+    framing: str = Field(default="crop", pattern="^(crop|blur)$")
 
 
 def update_job(job_id: str, status: str, progress: int, stage: str, error: str | None = None, result: dict[str, Any] | None = None) -> None:
@@ -461,7 +462,7 @@ def run_render_job(job_id: str, project_id: str, candidate_id: str, source_path:
         output_dir.mkdir(parents=True, exist_ok=True)
         export_id = str(uuid.uuid4())
         output = output_dir / f"{export_id}.mp4"
-        result = render(Path(source_path), output, candidate["start_seconds"], candidate["end_seconds"], settings["aspect_ratio"], settings["quality"])
+        result = render(Path(source_path), output, candidate["start_seconds"], candidate["end_seconds"], settings["aspect_ratio"], settings["quality"], settings.get("framing", "crop"))
         result_payload = {"export_id": export_id, **result}
         with connect() as db:
             db.execute("INSERT INTO exports(id,project_id,candidate_id,path,duration_seconds,aspect_ratio,resolution,size_bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
@@ -505,7 +506,7 @@ def run_batch_render_job(job_id: str, project_id: str, items: list[dict[str, Any
             result = render(
                 Path(item["source_path"]), output,
                 item["start_seconds"], item["end_seconds"],
-                settings["aspect_ratio"], settings["quality"],
+                settings["aspect_ratio"], settings["quality"], settings.get("framing", "crop"),
             )
             with connect() as db:
                 db.execute(
@@ -542,7 +543,7 @@ def start_batch_render(project_id: str, payload: BatchRenderInput, x_clipper_tok
                  for candidate_id in ids]
         job_id = str(uuid.uuid4())
         stamp = now_iso()
-        job_payload = {"items": items, "settings": {"aspect_ratio": payload.aspect_ratio, "quality": payload.quality}}
+        job_payload = {"items": items, "settings": {"aspect_ratio": payload.aspect_ratio, "quality": payload.quality, "framing": payload.framing}}
         db.execute(
             "INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?,?)",
             (job_id, project_id, "batch_render", json.dumps(job_payload), stamp, stamp),
