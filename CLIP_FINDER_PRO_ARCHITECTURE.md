@@ -22,7 +22,7 @@ Konfiguration: Ziellänge (15–180+ Sekunden), Anzahl oder alle geeigneten High
 Output: eigenständige MP4-Clips, Vorschauen, Zeitmarken und nachvollziehbare Clip-Scores. Originalton bleibt standardmäßig erhalten.
 
 ### B. Movie Recap (P1)
-Ziellänge frei einstellbar, insbesondere 2–3 sowie 5–15 Minuten. Pipeline: Medien-/Szenenindex → Transkript/OCR-Metadaten soweit verfügbar → hierarchische Szenenzusammenfassungen → chronologische Storyline → Recap-Skript → lokales KI-TTS → Auswahl zulässiger Szenen → Schnitt/Mix → Untertitel/Qualitätskontrolle.  
+Ziellänge frei einstellbar, verbindlich 5–15 Minuten. Pipeline: Medien-/Szenenindex → Transkript/OCR-Metadaten soweit verfügbar → hierarchische Szenenzusammenfassungen → chronologische Storyline → Recap-Skript → lokales KI-TTS → Auswahl zulässiger Szenen → Schnitt/Mix → Untertitel/Qualitätskontrolle.  
 Die Zusammenfassung muss Handlung und Chronologie erhalten; der Nutzer kann Skript und Szenenauswahl vor dem Rendern prüfen. Keine Behauptung, dass ein vollständiger Film in einem einzigen Kontextfenster verstanden wird.
 
 ### C. Podcast Repurpose (P1)
@@ -78,7 +78,7 @@ Transkript mit Zeitmarken und Sprechersegmenten → Themen-/Highlight-Erkennung 
 Transkription, Themen-/Sprechersegmente, Highlight-Ranking, Hook-/Caption-Entwürfe, Clip-Export.
 
 ### P1 — Movie Recap
-Hierarchische Story-Analyse, editierbares Skript, lokale KI-TTS, Szenenauswahl, 2–15-Minuten-Render und Qualitätsprüfung.
+Hierarchische Story-Analyse, editierbares Skript, lokale KI-TTS, Szenenauswahl, 5–15-Minuten-Render und Qualitätsprüfung.
 
 ### P2 — Bedienung/Server
 Mobile PWA, LAN-Token, optionaler Docker-Remote-Worker, Job-Synchronisierung.
