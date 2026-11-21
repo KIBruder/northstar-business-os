@@ -14,7 +14,7 @@ py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 $env:CLIPPER_DATA_DIR = "$PWD\data"
-uvicorn main:app --host %CLIPPER_HOST% --port 8765
+$env:CLIPPER_HOST = "127.0.0.1"\nuvicorn main:app --host $env:CLIPPER_HOST --port 8765
 ```
 
 Open `http://127.0.0.1:8765/health`. For API docs open `http://127.0.0.1:8765/docs`.
