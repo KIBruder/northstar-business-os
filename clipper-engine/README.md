@@ -20,7 +20,7 @@ uvicorn main:app --host %CLIPPER_HOST% --port 8765
 Open `http://127.0.0.1:8765/health`. For API docs open `http://127.0.0.1:8765/docs`.
 
 ## iPhone/LAN mode
-Do not expose this service to a network without authentication. Set a random token of at least 32 characters in `CLIPPER_API_TOKEN`, then start with `CLIPPER_HOST=0.0.0.0`. Set `CLIPPER_ALLOWED_ORIGINS` to the exact UI origin, for example `http://192.168.1.20:8000` (comma-separated allowlist). Send the token as `X-Clipper-Token`. Configure firewall access only for the trusted private LAN. HTTPS/reverse-proxy setup is required before use outside the LAN.
+Do not expose this service to a network without authentication. Set a random token of at least 32 characters in `CLIPPER_API_TOKEN`, then set `$env:CLIPPER_HOST = "0.0.0.0"`. Set `$env:CLIPPER_ALLOWED_ORIGINS` to the exact UI origin, for example `http://192.168.1.20:8000` (comma-separated allowlist). Send the token as `X-Clipper-Token`. Configure firewall access only for the trusted private LAN. HTTPS/reverse-proxy setup is required before use outside the LAN.
 
 ## API
 - `GET /health`: engine and FFmpeg availability (no secret).
