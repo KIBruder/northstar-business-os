@@ -51,12 +51,14 @@ Do not expose this service to a network without authentication. Set a random tok
 - `GET /api/exports/{export_id}/download`: authenticated MP4 download.
 
 ## Persistent job queue
-Analysis and render requests are written to SQLite before the API responds. The worker claims the oldest queued job using a short `BEGIN IMMEDIATE` transaction, so multiple engine processes do not claim the same queued row. Job inputs are stored in `payload_json`; startup migrates existing databases and requeues interrupted jobs that have a payload. Old jobs without a stored payload are marked failed because they cannot be reconstructed safely. Analysis candidates and the completed state are committed together; export metadata and render completion are also committed together.
+Analysis and render requests are written to SQLite before the API responds. The worker claims the oldest queued job using a short `BEGIN IMMEDIATE` transaction. Each claim increments `attempt_count` and establishes a renewable lease (`lease_owner`, `lease_expires_at`). A heartbeat thread renews the lease while analysis or FFmpeg rendering is active. Startup and the worker loop recover only expired leases; active leases are left untouched. Expired jobs are requeued until `max_attempts` is reached (default 3), after which they become failed. Jobs without replayable payloads are marked failed. Existing databases are migrated automatically.
 
-The queue is durable, but execution is **at-least-once**, not exactly-once. If the process stops during FFmpeg execution, the job is replayed after restart and rendering may run again. A separate supervised worker service, leases/heartbeats, retry limits and orphan-file cleanup are still future hardening work.
+Configure `CLIPPER_WORKER_LEASE_SECONDS` (default 90), `CLIPPER_MAX_JOB_ATTEMPTS` (default 3), and `CLIPPER_QUEUE_POLL_SECONDS` to tune the worker. Run one Uvicorn process for now: the SQLite claim is atomic, but the worker lifecycle is still in-process and has not yet been validated as a multi-process deployment. Analysis candidates and the completed state are committed together; export metadata and render completion are also committed together.
+
+Execution remains **at-least-once**, not exactly-once. A crash during an external FFmpeg operation can cause it to run again. The in-process heartbeat protects long jobs from false lease expiry, but a separately supervised worker service, orphan-file cleanup and production crash testing remain future hardening work.
 
 ## Current limitations
 - Transcript scoring uses transparent lexical and timing heuristics; it is not deep semantic or viral-moment classification.
 - The model runs on the host CPU by default and may be slow on long recordings.
-- Jobs are persisted in SQLite with replayable payloads. A background worker thread claims queued jobs atomically; after restart, interrupted jobs with payloads are requeued. Processing is at-least-once: a crash during an external FFmpeg operation can cause that operation to run again.
+- Jobs are persisted in SQLite with replayable payloads, renewable worker leases and bounded recovery attempts. Only expired leases are recovered; active jobs renew their lease by heartbeat. Processing is at-least-once: a crash during an external FFmpeg operation can cause that operation to run again.
 - Long-form (5–6 hour) media, actual FFmpeg rendering on the target host, and browser end-to-end behavior still require real-world validation.
