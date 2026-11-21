@@ -7,12 +7,13 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse
@@ -73,21 +74,92 @@ def init_db() -> None:
           duration_seconds REAL, probe_json TEXT NOT NULL, created_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id);
-        CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, stage TEXT NOT NULL, error TEXT, result_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, stage TEXT NOT NULL, error TEXT, result_json TEXT, payload_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id);
         CREATE TABLE IF NOT EXISTS candidates (id TEXT PRIMARY KEY, job_id TEXT NOT NULL, project_id TEXT NOT NULL, asset_id TEXT NOT NULL, start_seconds REAL NOT NULL, end_seconds REAL NOT NULL, score REAL NOT NULL, reasons_json TEXT NOT NULL, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_candidates_job ON candidates(job_id);
         CREATE TABLE IF NOT EXISTS exports (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, candidate_id TEXT NOT NULL, path TEXT NOT NULL, duration_seconds REAL NOT NULL, aspect_ratio TEXT NOT NULL, resolution TEXT NOT NULL, size_bytes INTEGER NOT NULL, created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_exports_project ON exports(project_id);
         """)
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(jobs)").fetchall()}
+        if "payload_json" not in columns:
+            db.execute("ALTER TABLE jobs ADD COLUMN payload_json TEXT")
+
+
+worker_thread: threading.Thread | None = None
+worker_stop = threading.Event()
+
+
+def recover_interrupted_jobs() -> None:
+    """Requeue jobs with durable payloads; fail legacy jobs that cannot be replayed."""
+    stamp = now_iso()
+    with connect() as db:
+        db.execute(
+            """UPDATE jobs SET status='queued',progress=0,stage='Nach Neustart wieder aufgenommen',
+               error=NULL,updated_at=? WHERE status='running' AND payload_json IS NOT NULL""",
+            (stamp,),
+        )
+        db.execute(
+            """UPDATE jobs SET status='failed',stage='Nicht wiederherstellbarer Alt-Job',
+               error='Dieser Job wurde vor Einführung der persistenten Warteschlange erstellt und besitzt keine gespeicherten Auftragsdaten.',
+               updated_at=? WHERE status IN ('queued','running') AND payload_json IS NULL""",
+            (stamp,),
+        )
+
+
+def claim_next_job() -> dict[str, Any] | None:
+    """Atomically claim the oldest queued job across all engine processes."""
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute(
+            "SELECT * FROM jobs WHERE status='queued' ORDER BY created_at,id LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        changed = db.execute(
+            "UPDATE jobs SET status='running',progress=1,stage='Worker hat Auftrag übernommen',updated_at=? WHERE id=? AND status='queued'",
+            (now_iso(), row["id"]),
+        ).rowcount
+        if changed != 1:
+            return None
+        claimed = db.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
+        return dict(claimed)
+
+
+def dispatch_job(job: dict[str, Any]) -> None:
+    payload = json.loads(job["payload_json"] or "{}")
+    if job["kind"] == "analysis":
+        run_analysis_job(job["id"], job["project_id"], payload["asset_id"], payload["source_path"], payload["settings"])
+    elif job["kind"] == "render":
+        run_render_job(job["id"], job["project_id"], payload["candidate_id"], payload["source_path"], payload["candidate"], payload["settings"])
+    else:
+        update_job(job["id"], "failed", 100, "Unbekannter Auftragstyp", error=f"Unsupported job kind: {job['kind']}")
+
+
+def worker_loop() -> None:
+    while not worker_stop.is_set():
+        job = None
+        try:
+            job = claim_next_job()
+            if job:
+                dispatch_job(job)
+                continue
+        except Exception as exc:
+            if job:
+                update_job(job["id"], "failed", 100, "Worker-Fehler", error=str(exc)[:2000])
+        worker_stop.wait(float(os.environ.get("CLIPPER_QUEUE_POLL_SECONDS", "1.0")))
 
 
 @app.on_event("startup")
 def startup() -> None:
+    global worker_thread
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     init_db()
-    with connect() as db:
-        db.execute("UPDATE jobs SET status='failed',stage='Serverneustart – Job unterbrochen',error='Der Engine-Prozess wurde während der Verarbeitung beendet. Bitte erneut starten.',updated_at=? WHERE status IN ('queued','running')", (now_iso(),))
+    recover_interrupted_jobs()
+    worker_stop.clear()
+    if worker_thread is None or not worker_thread.is_alive():
+        worker_thread = threading.Thread(target=worker_loop, name="clipper-sqlite-worker", daemon=True)
+        worker_thread.start()
 
 
 def require_token(token: str | None) -> None:
@@ -254,7 +326,7 @@ def run_analysis_job(job_id: str, project_id: str, asset_id: str, source_path: s
 
 
 @app.post("/api/projects/{project_id}/analyze")
-def start_analysis(project_id: str, payload: AnalyzeInput, background: BackgroundTasks, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+def start_analysis(project_id: str, payload: AnalyzeInput, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
     require_token(x_clipper_token)
     with connect() as db:
         asset = db.execute("SELECT * FROM assets WHERE project_id=? ORDER BY created_at DESC LIMIT 1", (project_id,)).fetchone()
@@ -265,9 +337,9 @@ def start_analysis(project_id: str, payload: AnalyzeInput, background: Backgroun
             raise HTTPException(status_code=409, detail="An analysis job is already running for this project")
         job_id = str(uuid.uuid4())
         stamp = now_iso()
-        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?)",
-                   (job_id, project_id, "analysis", stamp, stamp))
-    background.add_task(run_analysis_job, job_id, project_id, asset["id"], asset["path"], payload.model_dump())
+        job_payload = {"asset_id": asset["id"], "source_path": asset["path"], "settings": payload.model_dump()}
+        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?,?)",
+                   (job_id, project_id, "analysis", json.dumps(job_payload), stamp, stamp))
     return {"job_id": job_id, "status": "queued", "stage": "Warteschlange"}
 
 
@@ -314,7 +386,7 @@ def run_render_job(job_id: str, project_id: str, candidate_id: str, source_path:
 
 
 @app.post("/api/projects/{project_id}/candidates/{candidate_id}/render")
-def start_render(project_id: str, candidate_id: str, payload: RenderInput, background: BackgroundTasks, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+def start_render(project_id: str, candidate_id: str, payload: RenderInput, x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
     require_token(x_clipper_token)
     with connect() as db:
         row = db.execute("SELECT c.*,a.path FROM candidates c JOIN assets a ON a.id=c.asset_id WHERE c.id=? AND c.project_id=?", (candidate_id, project_id)).fetchone()
@@ -322,10 +394,10 @@ def start_render(project_id: str, candidate_id: str, payload: RenderInput, backg
             raise HTTPException(status_code=404, detail="Clip candidate not found")
         job_id = str(uuid.uuid4())
         stamp = now_iso()
-        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?)",
-                   (job_id, project_id, "render", stamp, stamp))
-    candidate = {"start_seconds": row["start_seconds"], "end_seconds": row["end_seconds"]}
-    background.add_task(run_render_job, job_id, project_id, candidate_id, row["path"], candidate, payload.model_dump())
+        candidate = {"start_seconds": row["start_seconds"], "end_seconds": row["end_seconds"]}
+        job_payload = {"candidate_id": candidate_id, "source_path": row["path"], "candidate": candidate, "settings": payload.model_dump()}
+        db.execute("INSERT INTO jobs(id,project_id,kind,status,progress,stage,payload_json,created_at,updated_at) VALUES(?,?,?,'queued',0,'Warteschlange',?,?,?)",
+                   (job_id, project_id, "render", json.dumps(job_payload), stamp, stamp))
     return {"job_id": job_id, "status": "queued"}
 
 
