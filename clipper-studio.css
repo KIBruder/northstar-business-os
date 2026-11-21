@@ -3,3 +3,10 @@
 .candidate-list{display:flex;flex-direction:column;gap:10px;margin-top:14px}.candidate{border:1px solid var(--line);background:#0d1522;border-radius:10px;padding:13px}.candidate-head{display:flex;align-items:center;justify-content:space-between}.candidate-head strong{font-size:11px}.score{font-size:10px;color:#a99aff;font-weight:800}.candidate-time{font-size:13px;font-variant-numeric:tabular-nums;margin-top:10px;color:#e4eaf5}.candidate-reasons{font-size:10px;color:var(--muted);line-height:1.5;margin:7px 0 0}.candidate .secondary{min-height:36px}
 
 .candidate-transcript{font-size:11px;line-height:1.55;color:#d7dff0;border-left:2px solid #8574ed;padding:8px 10px;margin:10px 0 4px;background:#151d2d;border-radius:0 7px 7px 0}.candidate-transcript-score{display:block;color:#a99aff;font-size:9px;margin:0 0 3px}
+
+.batch-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 12px;padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.025)}
+.batch-tools span{font-size:12px;color:var(--muted)}
+.candidate-pick{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted);cursor:pointer}
+.candidate-pick input{accent-color:var(--accent);width:16px;height:16px}
+.batch-tools button{width:auto;min-height:38px;padding:0 14px}
+@media(max-width:520px){.batch-tools{align-items:stretch;flex-direction:column}.batch-tools button{width:100%}}
