@@ -7,6 +7,7 @@ import shutil
 import statistics
 import subprocess
 import wave
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +106,7 @@ def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, pr
             break
     selected.sort(key=lambda item: item["start_seconds"])
     for index, item in enumerate(selected, 1):
-        item["id"] = f"{project_id}-{index}"
+        item["id"] = str(uuid.uuid4())
     return selected
 
 
