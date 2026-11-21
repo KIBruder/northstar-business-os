@@ -50,8 +50,13 @@ Do not expose this service to a network without authentication. Set a random tok
 - `POST /api/projects/{project_id}/candidates/{candidate_id}/render`: JSON `{ "aspect_ratio": "9:16", "quality": 1080 }`.
 - `GET /api/exports/{export_id}/download`: authenticated MP4 download.
 
+## Persistent job queue
+Analysis and render requests are written to SQLite before the API responds. The worker claims the oldest queued job using a short `BEGIN IMMEDIATE` transaction, so multiple engine processes do not claim the same queued row. Job inputs are stored in `payload_json`; startup migrates existing databases and requeues interrupted jobs that have a payload. Old jobs without a stored payload are marked failed because they cannot be reconstructed safely. Analysis candidates and the completed state are committed together; export metadata and render completion are also committed together.
+
+The queue is durable, but execution is **at-least-once**, not exactly-once. If the process stops during FFmpeg execution, the job is replayed after restart and rendering may run again. A separate supervised worker service, leases/heartbeats, retry limits and orphan-file cleanup are still future hardening work.
+
 ## Current limitations
 - Transcript scoring uses transparent lexical and timing heuristics; it is not deep semantic or viral-moment classification.
 - The model runs on the host CPU by default and may be slow on long recordings.
-- Jobs currently use FastAPI background tasks and are not automatically resumed after a server restart.
+- Jobs are persisted in SQLite with replayable payloads. A background worker thread claims queued jobs atomically; after restart, interrupted jobs with payloads are requeued. Processing is at-least-once: a crash during an external FFmpeg operation can cause that operation to run again.
 - Long-form (5–6 hour) media, actual FFmpeg rendering on the target host, and browser end-to-end behavior still require real-world validation.
