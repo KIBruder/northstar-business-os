@@ -414,9 +414,12 @@ async function generateContentDraft(postId){
  const product=state.products.find(x=>x.id===post.productId && x.workspaceId===state.workspaceId);
  if(!product){toast('Für diesen Entwurf ist kein Produkt verknüpft.');return;}
  const hasProductImages=[...(Array.isArray(product.referenceImagesDataUrls)?product.referenceImagesDataUrls:[]),product.imageDataUrl,...(product.screenshotDataUrls||[])].some(x=>typeof x==='string'&&x.startsWith('data:image/'));
+ let productAIWarning='';
  if(hasProductImages&&(!product.aiCreative?.analyzedAt||!Array.isArray(product.aiCreative.slideScenes)||product.aiCreative.slideScenes.length<3)){
   const progress=$('#contentDetail');if(progress)progress.insertAdjacentHTML('afterbegin','<p id="productAIProgress" class="import-progress">Produkt-KI analysiert Bilder, Produktart und passende Verkaufswinkel …</p>');
-  try{await requestProductAIAnalysis(product);}finally{$('#productAIProgress')?.remove();}
+  try{await requestProductAIAnalysis(product);}
+  catch(error){productAIWarning=String(error?.message||'Produkt-KI derzeit nicht erreichbar.');}
+  finally{$('#productAIProgress')?.remove();}
  }
  const panel=$('#contentDetail');
  if(panel){panel.insertAdjacentHTML('afterbegin',`<div class="generation-progress" id="generationProgress"><strong>BOFU-Produktionspaket wird erstellt</strong><div class="progress-track"><span id="generationBar" style="width:8%"></span></div><ol><li id="genStep1">Produktdaten und Beleglage prüfen</li><li id="genStep2">Drei-Slide-Dramaturgie aufbauen</li><li id="genStep3">Voiceover, Szenen und Medienprompts erstellen</li><li id="genStep4">Paket lokal speichern</li></ol></div>`);}
@@ -450,7 +453,7 @@ async function generateContentDraft(postId){
  setStep(3,76);await new Promise(r=>setTimeout(r,100));
  const caption=`${title}: Vor dem Kauf die Details prüfen und mit dem eigenen Bedarf abgleichen. ${seller?'Anbieter: '+seller+'. ':''}${source?'Produktquelle hinterlegt – bitte aktuelle Angaben dort kontrollieren.':'Aktuelle Produktdetails beim Händler prüfen.'}`;
  const hashtags=['#tiktokshop','#produkttipp','#musthave','#shopping','#affiliate'];
- post.draft={strategy:'BOFU',slides,caption,hashtags,videoScript,videoScenes,videoPrompt,createdAt:new Date().toISOString(),sourceType:'northstar-production-brief-v2',productionStatus:'Text, Szenenplan und Medienprompts erstellt. Bild-/Videodateien noch nicht generiert; Faktenprüfung vor Veröffentlichung erforderlich.',evidence:{descriptionVerified:Boolean(verifiedDescription),priceVerified:Boolean(priceVerified),sellerPresent:Boolean(seller),sourcePresent:Boolean(source)},notes:product.analysis?.angles||[]};
+ post.draft={strategy:'BOFU',slides,caption,hashtags,videoScript,videoScenes,videoPrompt,createdAt:new Date().toISOString(),sourceType:'northstar-production-brief-v2',productionStatus:productAIWarning?'Lokales BOFU-Paket erstellt. Produkt-KI-Analyse noch offen: '+productAIWarning:'Text, Szenenplan und Medienprompts erstellt. Bild-/Videodateien noch nicht generiert; Faktenprüfung vor Veröffentlichung erforderlich.',evidence:{descriptionVerified:Boolean(verifiedDescription),priceVerified:Boolean(priceVerified),sellerPresent:Boolean(seller),sourcePresent:Boolean(source)},notes:product.analysis?.angles||[]};
  post.status='Produktionspaket erstellt';post.updatedAt=new Date().toISOString();
  await db.put('posts',post);log('BOFU-Produktionspaket erstellt',`${post.title} · 3 Slides + Video-Brief`);
  setStep(4,100);await new Promise(r=>setTimeout(r,100));
