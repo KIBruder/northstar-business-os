@@ -116,7 +116,7 @@ def test_expired_lease_is_requeued_then_fails_at_attempt_limit(tmp_path, monkeyp
     assert rows["retry"]["status"] == "queued"
     assert rows["retry"]["lease_owner"] is None
     assert rows["exhausted"]["status"] == "failed"
-    assert "Wiederholungsversuchen" in rows["exhausted"]["error"]
+    assert "Wiederherstellungsversuchen" in rows["exhausted"]["error"]
 
 
 def test_lease_columns_are_migrated_on_existing_database(tmp_path, monkeypatch):
