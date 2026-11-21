@@ -197,3 +197,24 @@ def analyze(path: Path, output_dir: Path, clip_seconds: int, clip_count: int, pr
     for item in selected:
         item["id"] = str(uuid.uuid4())
     return selected
+
+
+def render(path: Path, output: Path, start: float, end: float, aspect: str, quality: int) -> dict[str, Any]:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("FFmpeg ist nicht installiert.")
+    dimensions = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
+    if aspect not in dimensions:
+        raise RuntimeError("Ungültiges Seitenverhältnis.")
+    width, height = dimensions[aspect]
+    scale = min(quality / 1080, 1.0)
+    width, height = int(width * scale), int(height * scale)
+    width, height = width - width % 2, height - height % 2
+    duration = max(1, end - start)
+    vf = f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1"
+    command = [ffmpeg, "-y", "-ss", f"{start:.3f}", "-i", str(path), "-t", f"{duration:.3f}", "-map", "0:v:0", "-map", "0:a?", "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output)]
+    result = run(command, timeout=7200)
+    if result.returncode or not output.exists() or output.stat().st_size == 0:
+        output.unlink(missing_ok=True)
+        raise RuntimeError("FFmpeg-Export fehlgeschlagen: " + result.stderr[-1200:])
+    return {"path": str(output), "size_bytes": output.stat().st_size, "duration_seconds": round(duration, 2), "aspect_ratio": aspect, "resolution": f"{width}x{height}"}
