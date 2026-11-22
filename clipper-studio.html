@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090d16"><title>CLIP-FINDER PRO — Studio</title>
+<link rel="stylesheet" href="./clipper-studio.css">
+</head>
+<body>
+<div class="shell">
+<aside class="rail"><a class="brand" href="./clipper-studio.html"><span class="mark">CF</span><span>CLIP-FINDER<small>PRO STUDIO</small></span></a><div class="rail-label">WORKSPACE</div><a class="nav active" href="./clipper-studio.html">◫ <span>Auto Clipper</span></a><div class="nav disabled">▤ <span>Podcast <em>demnächst</em></span></div><div class="nav disabled">▣ <span>Movie Recap <em>demnächst</em></span></div><div class="rail-bottom"><span class="pulse"></span><span id="engineState">Engine wird geprüft</span></div></aside>
+<main>
+<header class="top"><div><div class="eyebrow">VIDEO WORKSPACE / P0</div><h1>Auto Clipper</h1><p>Steuere den Clipper auf deinem privaten GitHub-Codespace.</p></div><div class="top-right"><span class="local"><i></i> Cloud-Modus</span><a class="back" href="./clipper-studio.html">← Studio</a></div></header>
+<section class="workspace">
+<div class="column">
+<section class="panel import-panel"><div class="panel-head"><div><span class="step">01 / MEDIEN</span><h2>Video importieren</h2><p>Die Datei wird an den eingestellten Server übertragen. Lade fertige Exporte direkt herunter; beim kostenlosen Render-Tarif können Quelldateien und Exporte bei Neustart oder Leerlauf verloren gehen.</p></div><span class="icon">↥</span></div>
+<label class="drop" id="dropZone"><input id="fileInput" type="file" accept="video/*,.mp4,.mov,.mkv,.webm"><span class="upload-icon">↑</span><strong>Datei auswählen oder hier ablegen</strong><small>MP4 · MOV · MKV · WEBM · maximal 200 MiB</small></label>
+<div id="fileMeta" class="file-meta hidden"></div><div class="field"><label for="projectName">PROJEKTNAME</label><input id="projectName" value="Stream Highlights" maxlength="160"></div>
+<button class="primary full" id="importBtn" disabled>Video zur Engine übertragen <span>→</span></button><div class="progress hidden" id="uploadProgress"><span id="progressBar"></span></div><div id="importStatus" class="status" aria-live="polite"></div></section>
+<section class="panel settings"><div class="panel-head"><div><span class="step">02 / CLIP-SETUP</span><h2>Export-Vorgaben</h2><p>Deine Einstellungen für den ersten Analyse- und Renderlauf.</p></div></div>
+<div class="field-grid"><div class="field"><label for="clipLength">CLIP-LÄNGE</label><select id="clipLength"><option value="30">30 Sekunden</option><option value="45">45 Sekunden</option><option value="60" selected>60 Sekunden</option><option value="90">90 Sekunden</option><option value="120">120 Sekunden</option><option value="180">180 Sekunden</option></select></div><div class="field"><label for="clipCount">ANZAHL</label><select id="clipCount"><option>3</option><option selected>5</option><option>10</option><option>15</option><option value="0">Alle Highlights</option></select></div><div class="field"><label for="aspect">FORMAT</label><select id="aspect"><option value="9:16" selected>9:16 · TikTok / Reels</option><option value="16:9">16:9 · YouTube</option><option value="1:1">1:1 · Square</option></select></div><div class="field"><label for="quality">QUALITÄT</label><select id="quality"><option value="720">720p</option><option value="1080" selected>1080p</option></select></div><div class="field"><label for="framing">BILDANPASSUNG</label><select id="framing"><option value="crop" selected>Bildfüllend · Zuschnitt</option><option value="blur">Gesamtes Bild · Blur-Hintergrund</option><option value="face">Gesichtserkennung · Tracking (Beta)</option></select></div></div>
+<button class="primary full" id="analyzeBtn" disabled>Highlights analysieren <span>→</span></button><div id="analysisStatus" class="status" aria-live="polite"></div><div class="progress hidden" id="analysisProgress"><span id="analysisBar"></span></div><div class="batch-tools"><span id="selectionCount">0 Clips ausgewählt</span><button class="secondary" id="batchRenderBtn" disabled>Auswahl gesammelt rendern</button></div><div id="candidateList" class="candidate-list"></div><div class="note"><span>ⓘ</span><p>Die Analyse kombiniert Audioenergie und Szenenwechsel. Optional ergänzt lokale Whisper-Transkription Sprachpassagen und Textsignale. Die Textbewertung bleibt eine transparente Heuristik.</p></div></section>
+</div>
+<div class="column">
+<section class="panel engine"><div class="panel-head"><div><span class="step">SYSTEMSTATUS</span><h2>Local Engine</h2><p>Verbindung zwischen iPhone und Verarbeitungsserver.</p></div><span class="status-badge" id="healthBadge">Prüfung…</span></div>
+<div class="field"><label for="engineUrl">ENGINE-ADRESSE</label><input id="engineUrl" type="url" value="" placeholder="Leer lassen auf Codespaces/Render; lokal http://127.0.0.1:8765"></div><div class="field"><label for="engineToken">API-TOKEN</label><input id="engineToken" type="password" autocomplete="off" placeholder="Auf Render aus dem Dashboard übernehmen"></div><button class="secondary full" id="checkBtn">Verbindung prüfen</button>
+<div class="health-grid"><div><small>FFMPEG</small><strong id="ffmpegState">—</strong></div><div><small>FFPROBE</small><strong id="ffprobeState">—</strong></div><div><small>STORAGE</small><strong id="storageState">—</strong></div></div></section>
+<section class="panel project-panel"><div class="panel-head"><div><span class="step">03 / PROJEKT</span><h2>Aktuelle Medien</h2><p>Importierte Quelldateien und technische Metadaten.</p></div></div><div id="projectState" class="empty"><span>▧</span><strong>Noch kein Projekt geladen</strong><small>Nach dem Import erscheinen hier die Mediendaten.</small></div><div id="assetList"></div></section>
+<section class="privacy"><span>⌑</span><div><strong>Deine Medien bleiben bei dir.</strong><p>Die Verarbeitung läuft auf deinem eigenen Rechner oder Server. Bei LAN-Verbindungen nutze ein starkes API-Token und ein vertrauenswürdiges Netzwerk.</p></div></section>
+</div>
+</section><footer>CLIP-FINDER PRO <span>LOCAL-FIRST VIDEO WORKFLOW</span></footer>
+</main></div><script type="module" src="./clipper-studio.js"></script></body></html>

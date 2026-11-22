@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: clip-finder-pro
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: feat/clip-finder-pro-foundation
+    dockerfilePath: ./deploy/render/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: off
+    envVars:
+      - key: CLIPPER_API_TOKEN
+        generateValue: true
+      - key: CLIPPER_MAX_UPLOAD_BYTES
+        value: "209715200"
+      - key: CLIPPER_ALLOWED_ORIGINS
+        value: "https://kibruder.github.io"
+      - key: CLIPPER_SERVE_STUDIO
+        value: "1"
+      - key: CLIPPER_STUDIO_DIR
+        value: "/studio"
+      - key: CLIPPER_DATA_DIR
+        value: "/tmp/clipper-data"
+      - key: CLIPPER_HOST
+        value: "0.0.0.0"

@@ -1,0 +1,21 @@
+{
+  "name": "CLIP-FINDER PRO Codespaces",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": 8,
+    "storage": 32
+  },
+  "postCreateCommand": "bash .devcontainer/setup-clipper.sh",
+  "postStartCommand": "bash .devcontainer/start-clipper.sh",
+  "forwardPorts": [
+    8765
+  ],
+  "portsAttributes": {
+    "8765": {
+      "label": "CLIP-FINDER PRO Studio",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
+  }
+}

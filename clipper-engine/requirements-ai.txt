@@ -1,0 +1,3 @@
+# Optional local speech-to-text engine
+# Install only if transcript-based candidate scoring is wanted.
+faster-whisper>=1.1,<2
