@@ -21,4 +21,4 @@ RUN useradd --system --uid 10001 --create-home clipper \
     && chown -R clipper:clipper /app /studio /tmp/clipper-data
 USER clipper
 EXPOSE 10000
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port \\"\${PORT:-10000}\\" --workers 1"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000} --workers 1"]
