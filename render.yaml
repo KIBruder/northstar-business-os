@@ -7,7 +7,7 @@ services:
     branch: feat/clip-finder-pro-foundation
     dockerfilePath: ./deploy/render/Dockerfile
     dockerContext: .
-    healthCheckPath: /health
+    healthCheckPath: /healthz
     autoDeployTrigger: off
     envVars:
       - key: CLIPPER_API_TOKEN
