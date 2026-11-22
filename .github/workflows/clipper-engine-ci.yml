@@ -27,6 +27,8 @@ jobs:
       - name: Compile Python modules
         working-directory: clipper-engine
         run: python -m py_compile main.py pipeline.py
+      - name: Build free Render Docker image
+        run: docker build -f deploy/render/Dockerfile -t clip-finder-pro-render .
       - name: Validate FastAPI routes and database schema
         working-directory: clipper-engine
         run: |
