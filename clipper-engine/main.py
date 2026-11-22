@@ -262,7 +262,8 @@ def codespaces_session() -> dict[str, str]:
 
 
 @app.get("/health")
-def health() -> dict[str, Any]:
+def health(x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_token(x_clipper_token)
     ffprobe = shutil.which("ffprobe")
     ffmpeg = shutil.which("ffmpeg")
     return {
@@ -577,7 +578,7 @@ def list_exports(project_id: str, x_clipper_token: str | None = Header(default=N
 
 
 if os.environ.get("CLIPPER_SERVE_STUDIO") == "1":
-    STUDIO_DIR = APP_DIR.parent
+    STUDIO_DIR = Path(os.environ.get("CLIPPER_STUDIO_DIR", APP_DIR.parent)).resolve()
     app.add_api_route("/", lambda: RedirectResponse("/clipper-studio.html"), methods=["GET"], include_in_schema=False)
     app.add_api_route("/clipper-studio.html", lambda: FileResponse(STUDIO_DIR / "clipper-studio.html"), methods=["GET"], include_in_schema=False)
     app.add_api_route("/clipper-studio.css", lambda: FileResponse(STUDIO_DIR / "clipper-studio.css", media_type="text/css"), methods=["GET"], include_in_schema=False)
