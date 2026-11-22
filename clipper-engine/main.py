@@ -261,6 +261,11 @@ def codespaces_session() -> dict[str, str]:
     return {"token": API_TOKEN}
 
 
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> dict[str, bool]:
+    return {"ok": True}
+
+
 @app.get("/health")
 def health(x_clipper_token: str | None = Header(default=None)) -> dict[str, Any]:
     require_token(x_clipper_token)
