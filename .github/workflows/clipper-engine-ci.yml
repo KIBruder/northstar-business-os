@@ -41,6 +41,7 @@ jobs:
           paths = {route.path for route in main.app.routes}
           required = {
               "/health",
+              "/healthz",
               "/api/projects",
               "/api/projects/{project_id}/analyze",
               "/api/jobs/{job_id}",
