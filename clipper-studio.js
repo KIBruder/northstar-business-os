@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 let selectedFile=null,projectId=null,asset=null,activeJob=null,codespacesToken='';const selectedCandidates=new Set();let candidateCache=[];
-const engine=()=>{const configured=$('engineUrl').value.trim();if(configured)return configured.replace(/\/$/,'');return location.hostname.endsWith('.app.github.dev')?location.origin:'http://127.0.0.1:8765'};
+const engine=()=>{const configured=$('engineUrl').value.trim();if(configured)return configured.replace(/\/$/,'');return (location.hostname.endsWith('.app.github.dev')||location.hostname.endsWith('.onrender.com'))?location.origin:'http://127.0.0.1:8765'};
 const headers=()=>{const t=$('engineToken').value.trim()||codespacesToken;return t?{'X-Clipper-Token':t}:{}};
 async function request(path,options={}){const res=await fetch(engine()+path,{...options,headers:{...headers(),...(options.headers||{})}});if(!res.ok){let msg='HTTP '+res.status;try{const j=await res.json();msg=j.detail||msg}catch{}throw new Error(msg)}return res.json()}
 function setHealth(ok,msg){$('healthBadge').textContent=msg;$('healthBadge').className='status-badge '+(ok?'ok':'error');$('engineState').textContent=ok?'Engine verbunden':'Engine nicht erreichbar'}
