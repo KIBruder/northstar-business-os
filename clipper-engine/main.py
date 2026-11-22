@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 
 APP_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("CLIPPER_DATA_DIR", APP_DIR / "data")).resolve()
@@ -252,6 +252,13 @@ def require_token(token: str | None) -> None:
 class ProjectInput(BaseModel):
     title: str
     mode: str = "clipper"
+
+
+@app.get("/api/session", include_in_schema=False)
+def codespaces_session() -> dict[str, str]:
+    if os.environ.get("CLIPPER_CODESPACES") != "1" or not API_TOKEN:
+        raise HTTPException(status_code=404, detail="Session token unavailable")
+    return {"token": API_TOKEN}
 
 
 @app.get("/health")
@@ -567,3 +574,11 @@ def list_exports(project_id: str, x_clipper_token: str | None = Header(default=N
     with connect() as db:
         rows = db.execute("SELECT id,candidate_id,duration_seconds,aspect_ratio,resolution,size_bytes,created_at FROM exports WHERE project_id=? ORDER BY created_at DESC", (project_id,)).fetchall()
     return {"exports": [dict(row) for row in rows]}
+
+
+if os.environ.get("CLIPPER_SERVE_STUDIO") == "1":
+    STUDIO_DIR = APP_DIR.parent
+    app.add_api_route("/", lambda: RedirectResponse("/clipper-studio.html"), methods=["GET"], include_in_schema=False)
+    app.add_api_route("/clipper-studio.html", lambda: FileResponse(STUDIO_DIR / "clipper-studio.html"), methods=["GET"], include_in_schema=False)
+    app.add_api_route("/clipper-studio.css", lambda: FileResponse(STUDIO_DIR / "clipper-studio.css", media_type="text/css"), methods=["GET"], include_in_schema=False)
+    app.add_api_route("/clipper-studio.js", lambda: FileResponse(STUDIO_DIR / "clipper-studio.js", media_type="text/javascript"), methods=["GET"], include_in_schema=False)
