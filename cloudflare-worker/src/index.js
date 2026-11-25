@@ -18,6 +18,7 @@ export default {
    if (url.pathname.endsWith('/api/auth/login')) return await authApi(request, env, cors, 'login');
    if (url.pathname.endsWith('/api/auth/me')) return await authApi(request, env, cors, 'me');
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (!env.AI || !env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Cloudflare-AI-Binding oder Zugriffstoken fehlt.' }, 503, cors);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Nicht autorisiert.' }, 401, cors);
@@ -222,3 +223,24 @@ async function verifySessionToken(request,env){
  return String(claims.sub);
 }
 
+
+
+async function awinPublishersApi(request, env, cors) {
+ if (request.method !== 'GET') return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ try { await verifySessionToken(request,env); }
+ catch { return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors); }
+ if (!env.AWIN_API_TOKEN) return json({error:'AWIN_API_TOKEN ist in Cloudflare noch nicht hinterlegt.'},503,cors);
+ try {
+  const response=await fetch('https://api.awin.com/publishers',{
+   method:'GET',
+   headers:{'Authorization':'Bearer '+env.AWIN_API_TOKEN,'Accept':'application/json'}
+  });
+  const body=await response.text();
+  if(!response.ok) return json({error:'Awin API Anfrage fehlgeschlagen.',status:response.status,detail:body.slice(0,1200)},response.status===429?429:502,cors);
+  let data;
+  try { data=JSON.parse(body); } catch { return json({error:'Awin lieferte keine gültige JSON-Antwort.'},502,cors); }
+  return json({ok:true,connected:true,publishers:data},200,cors);
+ } catch(error) {
+  return json({error:'Awin ist derzeit nicht erreichbar.',detail:String(error?.message||error)},502,cors);
+ }
+}
