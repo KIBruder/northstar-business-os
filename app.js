@@ -567,8 +567,11 @@ function settingsPage(){
 async function accountRequest(path,body){
  const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
  const response=await fetch(base+'/api/auth/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
- const payload=await response.json();
- if(!response.ok)throw new Error(payload.error||'Anmeldung fehlgeschlagen.');
+ const payload=await response.json().catch(()=>({}));
+ if(!response.ok){
+  const detail=payload.detail?(' · '+String(payload.detail).slice(0,240)):'';
+  throw new Error((payload.error||'Anmeldung fehlgeschlagen.')+detail);
+ }
  return payload;
 }
 async function loginAccount(){
