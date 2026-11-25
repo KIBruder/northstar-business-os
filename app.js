@@ -557,6 +557,11 @@ function settingsPage(){
  <section class="panel"><div class="panel-head"><div><h3>Cloud-Synchronisierung</h3><p>Überträgt deine Arbeitsbereiche und Geschäftsdaten in deine private D1-Datenbank.</p></div><span class="status-tag">D1 · verschlüsselte HTTPS-Verbindung</span></div>
  <label class="data-form">Worker-Adresse<input id="syncEndpoint" type="url" value="${esc(base)}" placeholder="https://…workers.dev"></label>
  <div class="detail-actions"><button class="button button-primary" id="saveSyncEndpoint">Adresse speichern</button><button class="button button-secondary" id="syncNow" ${token?'':'disabled'}>Jetzt synchronisieren</button></div><div id="syncStatus" class="form-hint" aria-live="polite">${token?'Bereit zur Synchronisierung.':'Bitte zuerst anmelden.'}</div></section>
+ <section class="panel"><div class="panel-head"><div><h3>Awin-Affiliate-Verbindung</h3><p>Serverseitiger Verbindungstest für dein Awin-Publisher-Konto.</p></div><span class="status-tag">API · nur lesend</span></div>
+ <p class="form-hint">Der Awin Personal Access Token bleibt ausschließlich als Cloudflare-Worker-Secret gespeichert. Er wird nicht in diesem Browser abgelegt.</p>
+ <div class="detail-actions"><button class="button button-primary" id="checkAwinConnection" ${token?'':'disabled'}>Awin-Verbindung prüfen</button></div>
+ <div id="awinConnectionStatus" class="form-hint" aria-live="polite">${token?'Noch nicht geprüft.':'Bitte zuerst bei Northstar anmelden.'}</div>
+ <div id="awinPublisherResult"></div></section>
  <div class="notice"><strong>Datenschutz</strong><span>Die Synchronisierung startet nur auf Knopfdruck. Vor dem ersten Einsatz müssen die Authentifizierungs-Migration und das geheime Signaturschlüssel-Setting im Cloudflare Worker eingerichtet sein. Teile dein Passwort oder den Sitzungstoken niemals.</span></div>`;
 }
 async function accountRequest(path,body){
@@ -578,6 +583,25 @@ async function registerAccount(event){
  catch(error){toast(error.message);}
 }
 function logoutAccount(){localStorage.removeItem('northstar_session_token');localStorage.removeItem('northstar_account_email');localStorage.removeItem('northstar_account_id');renderPage();toast('Abgemeldet.');}
+async function checkAwinConnection(){
+ const status=$('#awinConnectionStatus'),result=$('#awinPublisherResult');
+ const token=localStorage.getItem('northstar_session_token');
+ if(!token){if(status)status.textContent='Bitte zuerst bei Northstar anmelden.';return;}
+ const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
+ if(status)status.textContent='Awin-Verbindung wird geprüft …';
+ if(result)result.innerHTML='';
+ try{
+  const response=await fetch(base+'/api/awin/publishers',{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json'}});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(payload.error||('Verbindung fehlgeschlagen ('+response.status+').'));
+  const publishers=Array.isArray(payload.publishers)?payload.publishers:[payload.publishers].filter(Boolean);
+  if(status)status.textContent='Awin-Verbindung erfolgreich. Publisher-Konto wurde von Awin zurückgegeben.';
+  if(result)result.innerHTML=publishers.length?'<div class="detail-block"><span>Gefundene Publisher-Konten</span><ul>'+publishers.map(p=>'<li><strong>'+esc(p.name||p.publisherName||'Publisher')+'</strong>'+(p.id?' · ID '+esc(p.id):'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat die Verbindung bestätigt, aber keine Publisher-Daten in einem Listenformat zurückgegeben.</p>';
+  log('Awin-Verbindung geprüft','Publisher-Konten: '+publishers.length);
+ }catch(error){
+  if(status)status.textContent='Awin-Verbindung nicht bestätigt: '+String(error.message||error);
+ }
+}
 async function syncAllData(){
  const token=localStorage.getItem('northstar_session_token');if(!token)throw new Error('Bitte zuerst anmelden.');
  const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
@@ -664,6 +688,7 @@ function renderPage(){
  $('#accountLogout')?.addEventListener('click',logoutAccount);
  $('#saveSyncEndpoint')?.addEventListener('click',()=>{const value=String($('#syncEndpoint')?.value||'').trim().replace(/\/$/,'');try{const url=new URL(value);if(url.protocol!=='https:')throw new Error();localStorage.setItem('northstar_sync_endpoint',value);toast('Worker-Adresse gespeichert.');}catch{toast('Bitte eine gültige HTTPS-Worker-Adresse eingeben.');}});
  $('#syncNow')?.addEventListener('click',async()=>{const status=$('#syncStatus');status.textContent='Synchronisierung läuft …';try{status.textContent=await syncAllData();toast('Daten synchronisiert.');}catch(error){status.textContent=error.message;toast(error.message);}});
+ $('#checkAwinConnection')?.addEventListener('click',checkAwinConnection);
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
  $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFinancePolicy')?.addEventListener('click',saveFinancePolicy);
