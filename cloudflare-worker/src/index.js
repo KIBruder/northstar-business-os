@@ -20,6 +20,8 @@ export default {
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/feeds')) return await awinFeedsApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/catalog/refresh')) return await awinCatalogRefreshApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/catalog/status')) return await awinCatalogStatusApi(request, env, cors);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (!env.AI || !env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Cloudflare-AI-Binding oder Zugriffstoken fehlt.' }, 503, cors);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Nicht autorisiert.' }, 401, cors);
@@ -286,4 +288,41 @@ function parseAwinCsv(input){
  const rows=[];let row=[],field='',quoted=false;
  for(let i=0;i<input.length;i++){const c=input[i];if(quoted){if(c==='"'&&input[i+1]==='"'){field+='"';i++;}else if(c==='"')quoted=false;else field+=c;}else if(c==='"')quoted=true;else if(c===','){row.push(field);field='';}else if(c==='\n'){row.push(field.replace(/\r$/,''));rows.push(row);row=[];field='';}else field+=c;}
  if(field.length||row.length){row.push(field.replace(/\r$/,''));rows.push(row);}return rows;
+}
+
+
+// Stores the compressed Awin product feed as a private R2 snapshot.
+// Parsing and ranking are intentionally separate so large feeds never need
+// to be buffered in Worker memory.
+async function awinCatalogRefreshApi(request, env, cors) {
+ if(request.method!=='POST')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'POST, OPTIONS'});
+ try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
+ if(!env.AWIN_PRODUCT_FEED_URL)return json({error:'AWIN_PRODUCT_FEED_URL fehlt. Den vollständigen Awin-Download-Link als Cloudflare-Secret hinterlegen.'},503,cors);
+ if(!env.AWIN_CATALOG)return json({error:'R2-Binding AWIN_CATALOG fehlt. Den privaten R2-Bucket northstar-awin-catalog verbinden.'},503,cors);
+ try{
+  const feedUrl=new URL(env.AWIN_PRODUCT_FEED_URL);
+  if(feedUrl.protocol!=='https:'||feedUrl.hostname!=='productdata.awin.com')return json({error:'Der Feed-Link muss ein HTTPS-Awin-Produktdatenfeed-Link sein.'},400,cors);
+  const response=await fetch(feedUrl.toString(),{headers:{Accept:'application/gzip, application/octet-stream, */*'}});
+  if(!response.ok)return json({error:'Awin-Produktfeed konnte nicht geladen werden.',status:response.status},response.status===429?429:502,cors);
+  if(!response.body)return json({error:'Awin hat keinen Dateiinhalt geliefert.'},502,cors);
+  const length=Number(response.headers.get('Content-Length')||0);
+  if(length>250*1024*1024)return json({error:'Der Feed überschreitet das erlaubte Importlimit von 250 MB.'},413,cors);
+  const key='awin/catalog/latest.csv.gz';
+  const stored=await env.AWIN_CATALOG.put(key,response.body,{
+   httpMetadata:{contentType:'application/gzip',cacheControl:'private, no-store'},
+   customMetadata:{source:'awin',publisherId:'2069027',importedAt:new Date().toISOString(),sourceBytes:String(length||0)}
+  });
+  return json({ok:true,stored:true,key,size:stored.size,etag:stored.etag,importedAt:stored.uploaded?.toISOString?.()||new Date().toISOString(),message:'Komprimierter Awin-Feed wurde sicher in R2 gespeichert. Die Produktindizierung ist ein separater nächster Verarbeitungsschritt.'},200,cors);
+ }catch(error){return json({error:'Awin-Feedimport fehlgeschlagen.',detail:String(error?.message||error).slice(0,300)},502,cors);}
+}
+
+async function awinCatalogStatusApi(request, env, cors) {
+ if(request.method!=='GET')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
+ if(!env.AWIN_CATALOG)return json({error:'R2-Binding AWIN_CATALOG fehlt.'},503,cors);
+ try{
+  const object=await env.AWIN_CATALOG.head('awin/catalog/latest.csv.gz');
+  if(!object)return json({ok:true,available:false,message:'Noch kein Awin-Feed importiert.'},200,cors);
+  return json({ok:true,available:true,size:object.size,etag:object.etag,uploadedAt:object.uploaded?.toISOString?.()||null,metadata:object.customMetadata||{}},200,cors);
+ }catch(error){return json({error:'Katalogstatus konnte nicht gelesen werden.',detail:String(error?.message||error).slice(0,240)},502,cors);}
 }
