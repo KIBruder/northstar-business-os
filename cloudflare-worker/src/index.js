@@ -20,7 +20,8 @@ export default {
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/feeds')) return await awinFeedsApi(request, env, cors);
-  if (url.pathname.endsWith('/api/awin/catalog/refresh')) return await awinCatalogRefreshApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/catalog/import')) return await awinCatalogImportApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/catalog/search')) return await awinCatalogSearchApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/catalog/status')) return await awinCatalogStatusApi(request, env, cors);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (!env.AI || !env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Cloudflare-AI-Binding oder Zugriffstoken fehlt.' }, 503, cors);
@@ -291,33 +292,65 @@ function parseAwinCsv(input){
 }
 
 
-// Stores the compressed Awin product feed as a private R2 snapshot.
-// Parsing and ranking are intentionally separate so large feeds never need
-// to be buffered in Worker memory.
-async function awinCatalogRefreshApi(request, env, cors) {
+// D1-backed Awin catalogue: no R2 subscription or payment method required.
+async function awinCatalogImportApi(request, env, cors) {
  if(request.method!=='POST')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'POST, OPTIONS'});
  try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
- if(!env.AWIN_PRODUCT_FEED_URL)return json({error:'AWIN_PRODUCT_FEED_URL fehlt. Den vollständigen Awin-Download-Link als Cloudflare-Secret hinterlegen.'},503,cors);
- if(!env.AWIN_CATALOG)return json({error:'R2-Binding AWIN_CATALOG fehlt. Den privaten R2-Bucket northstar-awin-catalog verbinden.'},503,cors);
+ const db=env.DB||env.db;
+ if(!db)return json({error:'D1-Binding fehlt.'},503,cors);
  try{
-  const feedUrl=new URL(env.AWIN_PRODUCT_FEED_URL);
-  if(feedUrl.protocol!=='https:'||feedUrl.hostname!=='productdata.awin.com')return json({error:'Der Feed-Link muss ein HTTPS-Awin-Produktdatenfeed-Link sein.'},400,cors);
-  const response=await fetch(feedUrl.toString(),{headers:{Accept:'application/gzip, application/octet-stream, */*'}});
-  if(!response.ok)return json({error:'Awin-Produktfeed konnte nicht geladen werden.',status:response.status},response.status===429?429:502,cors);
-  if(!response.body)return json({error:'Awin hat keinen Dateiinhalt geliefert.'},502,cors);
-  const length=Number(response.headers.get('Content-Length')||0);
-  if(length>250*1024*1024)return json({error:'Der Feed überschreitet das erlaubte Importlimit von 250 MB.'},413,cors);
-  const key='awin/catalog/latest.csv.gz';
-  const stored=await env.AWIN_CATALOG.put(key,response.body,{
-   httpMetadata:{contentType:'application/gzip',cacheControl:'private, no-store'},
-   customMetadata:{source:'awin',publisherId:'2069027',importedAt:new Date().toISOString(),sourceBytes:String(length||0)}
-  });
-  return json({ok:true,stored:true,key,size:stored.size,etag:stored.etag,importedAt:stored.uploaded?.toISOString?.()||new Date().toISOString(),message:'Komprimierter Awin-Feed wurde sicher in R2 gespeichert. Die Produktindizierung ist ein separater nächster Verarbeitungsschritt.'},200,cors);
- }catch(error){return json({error:'Awin-Feedimport fehlgeschlagen.',detail:String(error?.message||error).slice(0,300)},502,cors);}
+  const body=await request.json();
+  const products=Array.isArray(body?.products)?body.products:[];
+  if(!products.length||products.length>100)return json({error:'products muss 1 bis 100 Einträge enthalten.'},400,cors);
+  const now=new Date().toISOString(), statements=[];
+  for(const p of products){
+   const productId=String(p.aw_product_id||p.product_id||'').trim();
+   const name=String(p.product_name||p.name||'').trim();
+   if(!productId||!name||productId.length>100||name.length>500)continue;
+   const raw=JSON.stringify(p);
+   if(raw.length>30000)continue;
+   const price=Number(String(p.search_price??p.price??'').replace(',','.'));
+   const stockRaw=String(p.in_stock??'').toLowerCase();
+   const stock=['1','true','yes','in stock'].includes(stockRaw)?1:(['0','false','no','out of stock'].includes(stockRaw)?0:null);
+   statements.push(db.prepare(`INSERT INTO awin_catalog_products
+    (product_id,publisher_id,advertiser_id,merchant_name,product_name,category_name,merchant_category,search_price,currency,in_stock,image_url,deep_link,updated_at,raw_json)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(product_id) DO UPDATE SET publisher_id=excluded.publisher_id,advertiser_id=excluded.advertiser_id,merchant_name=excluded.merchant_name,product_name=excluded.product_name,category_name=excluded.category_name,merchant_category=excluded.merchant_category,search_price=excluded.search_price,currency=excluded.currency,in_stock=excluded.in_stock,image_url=excluded.image_url,deep_link=excluded.deep_link,updated_at=excluded.updated_at,raw_json=excluded.raw_json`)
+    .bind(productId,'2069027',String(p.merchant_id||p.advertiser_id||''),String(p.merchant_name||p.advertiser_name||'').slice(0,200),name,String(p.category_name||'').slice(0,200),String(p.merchant_category||'').slice(0,300),Number.isFinite(price)?price:null,String(p.currency||'EUR').slice(0,8),stock,String(p.merchant_image_url||p.aw_image_url||p.image_url||'').slice(0,2000),String(p.aw_deep_link||p.deep_link||'').slice(0,3000),now,raw));
+  }
+  if(!statements.length)return json({error:'Keine gültigen Produktdatensätze im Paket.'},422,cors);
+  await db.batch(statements);
+  return json({ok:true,imported:statements.length,publisherId:'2069027',updatedAt:now},200,cors);
+ }catch(error){return json({error:'Katalogimport fehlgeschlagen.',detail:String(error?.message||error).slice(0,300)},500,cors);}
 }
-
+async function awinCatalogSearchApi(request, env, cors) {
+ if(request.method!=='GET')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
+ const db=env.DB||env.db;if(!db)return json({error:'D1-Binding fehlt.'},503,cors);
+ const url=new URL(request.url),q=String(url.searchParams.get('q')||'').trim().slice(0,120),category=String(url.searchParams.get('category')||'').trim().slice(0,120),limit=Math.min(100,Math.max(1,Number(url.searchParams.get('limit')||30)));
+ try{
+  let sql='SELECT product_id,merchant_name,product_name,category_name,merchant_category,search_price,currency,in_stock,image_url,deep_link,updated_at FROM awin_catalog_products WHERE publisher_id=?';
+  const args=['2069027'];
+  if(q){sql+=' AND (product_name LIKE ? OR merchant_name LIKE ? OR category_name LIKE ? OR merchant_category LIKE ?)';const like='%'+q+'%';args.push(like,like,like,like);}
+  if(category){sql+=' AND category_name LIKE ?';args.push('%'+category+'%');}
+  sql+=' ORDER BY updated_at DESC, product_name LIMIT ?';args.push(limit);
+  const rows=await db.prepare(sql).bind(...args).all();
+  return json({ok:true,count:rows.results.length,products:rows.results},200,cors);
+ }catch(error){return json({error:'Katalogsuche fehlgeschlagen.',detail:String(error?.message||error).slice(0,240)},500,cors);}
+}
 async function awinCatalogStatusApi(request, env, cors) {
  if(request.method!=='GET')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
+ const db=env.DB||env.db;if(!db)return json({error:'D1-Binding fehlt.'},503,cors);
+ try{
+  const [count,merchants,categories]=await Promise.all([
+   db.prepare('SELECT COUNT(*) AS count, MAX(updated_at) AS updated_at FROM awin_catalog_products WHERE publisher_id=?').bind('2069027').first(),
+   db.prepare('SELECT COUNT(DISTINCT merchant_name) AS count FROM awin_catalog_products WHERE publisher_id=?').bind('2069027').first(),
+   db.prepare('SELECT COUNT(DISTINCT category_name) AS count FROM awin_catalog_products WHERE publisher_id=?').bind('2069027').first()
+  ]);
+  return json({ok:true,available:Number(count?.count||0)>0,productCount:Number(count?.count||0),merchantCount:Number(merchants?.count||0),categoryCount:Number(categories?.count||0),updatedAt:count?.updated_at||null,storage:'D1'},200,cors);
+ }catch(error){return json({error:'Katalogstatus konnte nicht gelesen werden.',detail:String(error?.message||error).slice(0,240)},500,cors);}
+}
  try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
  if(!env.AWIN_CATALOG)return json({error:'R2-Binding AWIN_CATALOG fehlt.'},503,cors);
  try{
