@@ -601,7 +601,8 @@ async function checkAwinConnection(){
    const detail=payload.detail?' Antwort: '+String(payload.detail).slice(0,500):'';
    throw new Error((payload.error||'Verbindung fehlgeschlagen.')+upstream+detail);
   }
-  const accounts=Array.isArray(payload.accounts)?payload.accounts:[payload.accounts].filter(Boolean);
+  const accountPayload=payload.accounts;
+  const accounts=Array.isArray(accountPayload)?accountPayload:(Array.isArray(accountPayload?.accounts)?accountPayload.accounts:(accountPayload?[accountPayload]:[]));
   if(status)status.textContent='Awin-Verbindung erfolgreich. Awin hat die Kontenliste zurückgegeben.';
   if(result)result.innerHTML=accounts.length?'<div class="detail-block"><span>Gefundene Awin-Konten</span><ul>'+accounts.map(a=>'<li><strong>'+esc(a.accountName||'Awin-Konto')+'</strong>'+(a.accountId?' · ID '+esc(a.accountId):'')+(a.accountType?' · '+esc(a.accountType):'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat die Verbindung bestätigt, aber keine Konten zurückgegeben.</p>';
   log('Awin-Verbindung geprüft','Awin-Konten: '+accounts.length);
