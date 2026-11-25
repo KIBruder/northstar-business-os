@@ -189,8 +189,10 @@ async function authApi(request, env, cors, action) {
   const token=await createSessionToken(user.id,env);
   return json({token,tokenType:'Bearer',expiresIn:604800,user:{id:user.id,email:user.email,createdAt:user.created_at}},200,cors);
  } catch(error) {
-  console.error('[northstar-auth] request failed', { action, stage, name:String(error?.name||'Error'), message:String(error?.message||error) });
-  return json({error:'Authentifizierung fehlgeschlagen.',detail:'Interner Fehler bei Verarbeitungsschritt: '+stage},500,cors);
+  const errorName=String(error?.name||'Error').slice(0,80);
+  const errorMessage=String(error?.message||error||'Unbekannter Fehler').slice(0,240);
+  console.error('[northstar-auth] request failed', { action, stage, name:errorName, message:errorMessage });
+  return json({error:'Authentifizierung fehlgeschlagen.',detail:'Schritt: '+stage+' · '+errorName+': '+errorMessage},500,cors);
  }
 }
 async function hashPassword(password,salt) {
