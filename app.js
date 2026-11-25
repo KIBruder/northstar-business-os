@@ -601,10 +601,10 @@ async function checkAwinConnection(){
    const detail=payload.detail?' Antwort: '+String(payload.detail).slice(0,500):'';
    throw new Error((payload.error||'Verbindung fehlgeschlagen.')+upstream+detail);
   }
-  const publishers=Array.isArray(payload.publishers)?payload.publishers:[payload.publishers].filter(Boolean);
-  if(status)status.textContent='Awin-Verbindung erfolgreich. Publisher-Konto wurde von Awin zurückgegeben.';
-  if(result)result.innerHTML=publishers.length?'<div class="detail-block"><span>Gefundene Publisher-Konten</span><ul>'+publishers.map(p=>'<li><strong>'+esc(p.name||p.publisherName||'Publisher')+'</strong>'+(p.id?' · ID '+esc(p.id):'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat die Verbindung bestätigt, aber keine Publisher-Daten in einem Listenformat zurückgegeben.</p>';
-  log('Awin-Verbindung geprüft','Publisher-Konten: '+publishers.length);
+  const accounts=Array.isArray(payload.accounts)?payload.accounts:[payload.accounts].filter(Boolean);
+  if(status)status.textContent='Awin-Verbindung erfolgreich. Awin hat die Kontenliste zurückgegeben.';
+  if(result)result.innerHTML=accounts.length?'<div class="detail-block"><span>Gefundene Awin-Konten</span><ul>'+accounts.map(a=>'<li><strong>'+esc(a.accountName||'Awin-Konto')+'</strong>'+(a.accountId?' · ID '+esc(a.accountId):'')+(a.accountType?' · '+esc(a.accountType):'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat die Verbindung bestätigt, aber keine Konten zurückgegeben.</p>';
+  log('Awin-Verbindung geprüft','Awin-Konten: '+accounts.length);
  }catch(error){
   if(status)status.textContent='Awin-Verbindung nicht bestätigt: '+String(error.message||error);
  }
