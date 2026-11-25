@@ -351,11 +351,3 @@ async function awinCatalogStatusApi(request, env, cors) {
   return json({ok:true,available:Number(count?.count||0)>0,productCount:Number(count?.count||0),merchantCount:Number(merchants?.count||0),categoryCount:Number(categories?.count||0),updatedAt:count?.updated_at||null,storage:'D1'},200,cors);
  }catch(error){return json({error:'Katalogstatus konnte nicht gelesen werden.',detail:String(error?.message||error).slice(0,240)},500,cors);}
 }
- try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
- if(!env.AWIN_CATALOG)return json({error:'R2-Binding AWIN_CATALOG fehlt.'},503,cors);
- try{
-  const object=await env.AWIN_CATALOG.head('awin/catalog/latest.csv.gz');
-  if(!object)return json({ok:true,available:false,message:'Noch kein Awin-Feed importiert.'},200,cors);
-  return json({ok:true,available:true,size:object.size,etag:object.etag,uploadedAt:object.uploaded?.toISOString?.()||null,metadata:object.customMetadata||{}},200,cors);
- }catch(error){return json({error:'Katalogstatus konnte nicht gelesen werden.',detail:String(error?.message||error).slice(0,240)},502,cors);}
-}
