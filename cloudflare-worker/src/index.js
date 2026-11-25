@@ -203,7 +203,7 @@ async function hashPassword(password,salt) {
   throw new Error('PBKDF2 importKey fehlgeschlagen: '+String(error?.name||'Error')+' '+String(error?.message||error).slice(0,160));
  }
  try {
-  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new Uint8Array(salt),iterations:120000},key,256);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new Uint8Array(salt),iterations:100000},key,256);
   return new Uint8Array(bits);
  } catch(error) {
   throw new Error('PBKDF2 deriveBits fehlgeschlagen: '+String(error?.name||'Error')+' '+String(error?.message||error).slice(0,160));
