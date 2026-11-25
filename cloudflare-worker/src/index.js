@@ -243,7 +243,7 @@ async function awinPublishersApi(request, env, cors) {
  catch { return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors); }
  if (!env.AWIN_API_TOKEN) return json({error:'AWIN_API_TOKEN ist in Cloudflare noch nicht hinterlegt.'},503,cors);
  try {
-  const response=await fetch('https://api.awin.com/publishers',{
+  const response=await fetch('https://api.awin.com/accounts?type=publisher',{
    method:'GET',
    headers:{'Authorization':'Bearer '+env.AWIN_API_TOKEN,'Accept':'application/json'}
   });
@@ -251,7 +251,7 @@ async function awinPublishersApi(request, env, cors) {
   if(!response.ok) return json({error:'Awin API Anfrage fehlgeschlagen.',status:response.status,detail:body.slice(0,1200)},response.status===429?429:502,cors);
   let data;
   try { data=JSON.parse(body); } catch { return json({error:'Awin lieferte keine gültige JSON-Antwort.'},502,cors); }
-  return json({ok:true,connected:true,publishers:data},200,cors);
+  return json({ok:true,connected:true,accounts:data},200,cors);
  } catch(error) {
   return json({error:'Awin ist derzeit nicht erreichbar.',detail:String(error?.message||error)},502,cors);
  }
