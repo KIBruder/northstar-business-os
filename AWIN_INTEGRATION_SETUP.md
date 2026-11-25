@@ -1,40 +1,53 @@
 # Awin integration setup
 
-Northstar now includes a server-side Awin connection check endpoint:
+Northstar's Awin integration is server-side. Secrets are never returned to the browser.
 
-- `GET /api/awin/publishers`
+## Existing read-only connection test
+
+- `GET /api/awin/publishers` checks the authenticated Awin publisher account.
 - Requires an authenticated Northstar session in `Authorization: Bearer <Northstar session>`.
-- Reads the Awin Personal Access Token only from the Cloudflare Worker secret `AWIN_API_TOKEN`.
-- Calls Awin's official `GET https://api.awin.com/publishers` endpoint.
-- Never returns or logs the Awin token.
+- Reads the Awin Personal Access Token only from Cloudflare Worker secret `AWIN_API_TOKEN`.
+
+## Product feed snapshot import
+
+The product feed download uses a separate feed URL/key, not the Awin Personal Access Token.
+
+- `POST /api/awin/catalog/refresh` downloads the configured feed and streams the compressed file into private Cloudflare R2.
+- `GET /api/awin/catalog/status` reports whether a snapshot exists and its size/timestamp.
+- Both endpoints require an authenticated Northstar session.
+- R2 object key: `awin/catalog/latest.csv.gz`.
+- The import does not yet parse, index, rank, or publish individual products. Those are separate stages and must not be represented as completed until implemented and tested.
 
 ## One-time Cloudflare setup
 
-From the Cloudflare dashboard, open Workers & Pages, select the Northstar Worker (currently configured as `northstar-image-generator`), then Settings → Variables and Secrets → Add → Secret.
+1. In Cloudflare R2, create a **private** bucket named `northstar-awin-catalog`.
+2. In Workers & Pages, open Worker `northstar-image-generator` and add these secrets under Settings → Variables and Secrets:
+   - `AWIN_API_TOKEN`: Awin Personal Access Token.
+   - `AWIN_PRODUCT_FEED_URL`: complete HTTPS download URL copied from the newly generated Awin product feed.
+3. Keep both values as **Secrets**, not plain variables. Never put them in GitHub, source code, browser JavaScript, screenshots, or chat.
+4. Deploy the Worker configuration from `cloudflare-worker/wrangler.toml`, including the R2 binding `AWIN_CATALOG` to bucket `northstar-awin-catalog`.
 
-Name: `AWIN_API_TOKEN`
+If an Awin feed URL/key has been exposed in a screenshot or shared message, revoke/regenerate that feed credential before saving the replacement. Do not send the replacement URL to ChatGPT.
 
-Value: paste the Awin Personal Access Token. Save and deploy/redeploy the Worker if Cloudflare requests it.
+## Triggering the import
 
-Do not put the token in GitHub, source code, browser local storage, screenshots, chat messages, or a normal `[vars]` entry in wrangler.toml. If the token has ever been exposed, revoke it in Awin and create a replacement.
-
-## Test
-
-After setting the secret and deploying, call the endpoint from an authenticated Northstar session:
+From the authenticated Northstar app, call:
 
 ```http
-GET /api/awin/publishers
+POST /api/awin/catalog/refresh
 Authorization: Bearer <Northstar session token>
 ```
 
-A successful response has `ok: true`, `connected: true`, and the publisher account data returned by Awin. A 503 with `AWIN_API_TOKEN` missing means the Cloudflare secret is not configured. A 401 from Awin indicates an invalid, expired, or insufficiently authorized Awin token.
+Then check:
 
-## Scope and limitations
+```http
+GET /api/awin/catalog/status
+Authorization: Bearer <Northstar session token>
+```
 
-This first integration is deliberately read-only. It verifies Awin authentication and retrieves publisher account identity. It does not create affiliate links, download product feeds, import products, or publish a storefront yet.
+The refresh streams the compressed feed directly to R2 rather than buffering the full file in Worker memory. The current implementation stores one latest snapshot; it does not yet provide incremental product indexing, scheduled refresh, product ranking, or storefront publication.
 
-Awin product-feed downloads use a separate data-feed key, not the Publisher API token. The product-feed list/download workflow must be configured separately. See Awin's official documentation:
+## Awin documentation
+
 - https://help.awin.com/apidocs/api-authentication
 - https://help.awin.com/developers/docs/downloading-a-list-of-your-product-feeds
-
-Awin API calls must remain server-side. Do not expose the secret to client-side JavaScript.
