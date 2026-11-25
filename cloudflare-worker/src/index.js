@@ -196,8 +196,18 @@ async function authApi(request, env, cors, action) {
  }
 }
 async function hashPassword(password,salt) {
- const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
- return new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:120000},key,256));
+ let key;
+ try {
+  key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
+ } catch(error) {
+  throw new Error('PBKDF2 importKey fehlgeschlagen: '+String(error?.name||'Error')+' '+String(error?.message||error).slice(0,160));
+ }
+ try {
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new Uint8Array(salt),iterations:120000},key,256);
+  return new Uint8Array(bits);
+ } catch(error) {
+  throw new Error('PBKDF2 deriveBits fehlgeschlagen: '+String(error?.name||'Error')+' '+String(error?.message||error).slice(0,160));
+ }
 }
 function toBase64Url(bytes){let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function fromBase64Url(value){const raw=atob(String(value).replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-String(value).length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
