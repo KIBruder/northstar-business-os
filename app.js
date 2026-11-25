@@ -561,7 +561,11 @@ function settingsPage(){
  <p class="form-hint">Der Awin Personal Access Token bleibt ausschließlich als Cloudflare-Worker-Secret gespeichert. Er wird nicht in diesem Browser abgelegt.</p>
  <div class="detail-actions"><button class="button button-primary" id="checkAwinConnection" ${token?'':'disabled'}>Awin-Verbindung prüfen</button></div>
  <div id="awinConnectionStatus" class="form-hint" aria-live="polite">${token?'Noch nicht geprüft.':'Bitte zuerst bei Northstar anmelden.'}</div>
- <div id="awinPublisherResult"></div></section>
+ <div id="awinPublisherResult"></div>
+ <hr class="panel-divider"><div class="panel-head"><div><h3>Produktfeeds entdecken</h3><p>Advertiser und verfügbare Produktkataloge aus deinem Awin-Konto laden.</p></div><span class="status-tag">Feed-Import</span></div>
+ <p class="form-hint">Benötigt zusätzlich den separaten Awin Data Feed Key als Cloudflare-Secret AWIN_DATAFEED_KEY. Der Publisher-API-Token allein reicht dafür nicht.</p>
+ <div class="detail-actions"><button class="button button-secondary" id="loadAwinFeeds" ${token?'':'disabled'}>Produktfeeds abrufen</button></div>
+ <div id="awinFeedStatus" class="form-hint" aria-live="polite"></div><div id="awinFeedResult"></div></section>
  <div class="notice"><strong>Datenschutz</strong><span>Die Synchronisierung startet nur auf Knopfdruck. Vor dem ersten Einsatz müssen die Authentifizierungs-Migration und das geheime Signaturschlüssel-Setting im Cloudflare Worker eingerichtet sein. Teile dein Passwort oder den Sitzungstoken niemals.</span></div>`;
 }
 async function accountRequest(path,body){
@@ -586,6 +590,23 @@ async function registerAccount(event){
  catch(error){toast(error.message);}
 }
 function logoutAccount(){localStorage.removeItem('northstar_session_token');localStorage.removeItem('northstar_account_email');localStorage.removeItem('northstar_account_id');renderPage();toast('Abgemeldet.');}
+async function loadAwinFeeds(){
+ const status=$('#awinFeedStatus'),result=$('#awinFeedResult');
+ const token=localStorage.getItem('northstar_session_token');
+ if(!token){if(status)status.textContent='Bitte zuerst bei Northstar anmelden.';return;}
+ const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');
+ if(status)status.textContent='Awin-Produktfeeds werden abgerufen …';
+ if(result)result.innerHTML='';
+ try{
+  const response=await fetch(base+'/api/awin/feeds',{headers:{Authorization:'Bearer '+token,Accept:'application/json'}});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error((payload.error||'Feedliste konnte nicht geladen werden.')+(payload.status?' · HTTP '+payload.status:'')+(payload.detail?' · '+String(payload.detail).slice(0,250):''));
+  if(status)status.textContent='Feedliste geladen: '+payload.feedCount+' verfügbare Produktfeeds.';
+  const feeds=Array.isArray(payload.feeds)?payload.feeds:[];
+  if(result)result.innerHTML=feeds.length?'<div class="detail-block"><span>Verfügbare Awin-Feeds · Ai.Boxx</span><ul>'+feeds.map(f=>'<li><strong>'+esc(f.advertiserName||'Advertiser')+'</strong>'+(f.region?' · '+esc(f.region):'')+(f.membershipStatus?' · '+esc(f.membershipStatus):'')+(f.vertical?' · '+esc(f.vertical):'')+(f.productCount?' · '+Number(f.productCount).toLocaleString('de-DE')+' Produkte':'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat aktuell keine Produktfeeds für diesen Publisher zurückgegeben.</p>';
+  log('Awin-Produktfeeds abgerufen','Verfügbare Feeds: '+feeds.length);
+ }catch(error){if(status)status.textContent='Produktfeeds nicht verfügbar: '+String(error.message||error);}
+}
 async function checkAwinConnection(){
  const status=$('#awinConnectionStatus'),result=$('#awinPublisherResult');
  const token=localStorage.getItem('northstar_session_token');
@@ -697,6 +718,7 @@ function renderPage(){
  $('#saveSyncEndpoint')?.addEventListener('click',()=>{const value=String($('#syncEndpoint')?.value||'').trim().replace(/\/$/,'');try{const url=new URL(value);if(url.protocol!=='https:')throw new Error();localStorage.setItem('northstar_sync_endpoint',value);toast('Worker-Adresse gespeichert.');}catch{toast('Bitte eine gültige HTTPS-Worker-Adresse eingeben.');}});
  $('#syncNow')?.addEventListener('click',async()=>{const status=$('#syncStatus');status.textContent='Synchronisierung läuft …';try{status.textContent=await syncAllData();toast('Daten synchronisiert.');}catch(error){status.textContent=error.message;toast(error.message);}});
  $('#checkAwinConnection')?.addEventListener('click',checkAwinConnection);
+ $('#loadAwinFeeds')?.addEventListener('click',loadAwinFeeds);
  $('#agentTaskForm')?.addEventListener('submit',saveAgentTask);
  document.querySelectorAll('[data-task-status]').forEach(s=>s.addEventListener('change',()=>updateAgentTask(s.dataset.taskStatus,s.value)));
  $('#financeEntryForm')?.addEventListener('submit',saveFinanceEntry);$('#saveFinancePolicy')?.addEventListener('click',saveFinancePolicy);
