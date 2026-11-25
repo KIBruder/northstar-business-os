@@ -596,7 +596,11 @@ async function checkAwinConnection(){
  try{
   const response=await fetch(base+'/api/awin/publishers',{method:'GET',headers:{'Authorization':'Bearer '+token,'Accept':'application/json'}});
   const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(payload.error||('Verbindung fehlgeschlagen ('+response.status+').'));
+  if(!response.ok){
+   const upstream=payload.status?' Awin-HTTP-Status: '+payload.status+'.':'';
+   const detail=payload.detail?' Antwort: '+String(payload.detail).slice(0,500):'';
+   throw new Error((payload.error||'Verbindung fehlgeschlagen.')+upstream+detail);
+  }
   const publishers=Array.isArray(payload.publishers)?payload.publishers:[payload.publishers].filter(Boolean);
   if(status)status.textContent='Awin-Verbindung erfolgreich. Publisher-Konto wurde von Awin zurückgegeben.';
   if(result)result.innerHTML=publishers.length?'<div class="detail-block"><span>Gefundene Publisher-Konten</span><ul>'+publishers.map(p=>'<li><strong>'+esc(p.name||p.publisherName||'Publisher')+'</strong>'+(p.id?' · ID '+esc(p.id):'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat die Verbindung bestätigt, aber keine Publisher-Daten in einem Listenformat zurückgegeben.</p>';
