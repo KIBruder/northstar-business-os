@@ -19,6 +19,7 @@ export default {
    if (url.pathname.endsWith('/api/auth/me')) return await authApi(request, env, cors, 'me');
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
+  if (url.pathname.endsWith('/api/awin/feeds')) return await awinFeedsApi(request, env, cors);
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, cors);
   if (!env.AI || !env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Cloudflare-AI-Binding oder Zugriffstoken fehlt.' }, 503, cors);
   if (request.headers.get('Authorization') !== 'Bearer ' + env.NORTHSTAR_ACCESS_TOKEN) return json({ error: 'Nicht autorisiert.' }, 401, cors);
@@ -255,4 +256,34 @@ async function awinPublishersApi(request, env, cors) {
  } catch(error) {
   return json({error:'Awin ist derzeit nicht erreichbar.',detail:String(error?.message||error)},502,cors);
  }
+}
+
+async function awinFeedsApi(request, env, cors) {
+ if(request.method!=='GET')return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
+ if(!env.AWIN_DATAFEED_KEY)return json({error:'AWIN_DATAFEED_KEY fehlt. Der separate Awin-Data-Feed-Key muss als Cloudflare-Worker-Secret hinterlegt werden.'},503,cors);
+ const publisherId='2069027';
+ try{
+  const url='https://ui.awin.com/productdata-darwin-download/publisher/'+publisherId+'/'+encodeURIComponent(env.AWIN_DATAFEED_KEY)+'/1/feedList';
+  const response=await fetch(url,{headers:{Accept:'text/csv'}});
+  const body=await response.text();
+  if(!response.ok)return json({error:'Awin-Feedliste konnte nicht geladen werden.',status:response.status,detail:body.slice(0,400)},response.status===429?429:502,cors);
+  const rows=parseAwinCsv(body);
+  if(rows.length<2)return json({ok:true,publisherId,feedCount:0,feeds:[]},200,cors);
+  const headers=rows[0].map(v=>String(v||'').trim().toLowerCase());
+  const get=(row,names)=>{const i=headers.findIndex(h=>names.includes(h));return i<0?'':String(row[i]||'').trim();};
+  const feeds=rows.slice(1).filter(r=>r.some(Boolean)).map(r=>({
+   advertiserId:get(r,['advertiser id','advertiserid']),advertiserName:get(r,['advertiser name','advertisername']),
+   region:get(r,['primary region','primaryregion']),membershipStatus:get(r,['membership status','membershipstatus']),
+   format:get(r,['datafeed format','datafeedformat']),feedId:get(r,['feed id','feedid']),feedName:get(r,['feed name','feedname']),
+   language:get(r,['language']),vertical:get(r,['vertical']),lastImported:get(r,['last imported','lastimported']),
+   lastChecked:get(r,['last checked','lastchecked']),productCount:Number(get(r,['no of products','number of products','product count']).replace(/[^0-9]/g,''))||0
+  })).filter(x=>x.advertiserId||x.advertiserName);
+  return json({ok:true,publisherId,feedCount:feeds.length,feeds},200,cors);
+ }catch(error){return json({error:'Awin-Feedliste ist derzeit nicht erreichbar.',detail:String(error?.message||error).slice(0,300)},502,cors);}
+}
+function parseAwinCsv(input){
+ const rows=[];let row=[],field='',quoted=false;
+ for(let i=0;i<input.length;i++){const c=input[i];if(quoted){if(c==='"'&&input[i+1]==='"'){field+='"';i++;}else if(c==='"')quoted=false;else field+=c;}else if(c==='"')quoted=true;else if(c===','){row.push(field);field='';}else if(c==='\n'){row.push(field.replace(/\r$/,''));rows.push(row);row=[];field='';}else field+=c;}
+ if(field.length||row.length){row.push(field.replace(/\r$/,''));rows.push(row);}return rows;
 }
