@@ -16,7 +16,3 @@ database_id = "ec0ca8de-3051-404b-8d4b-d5c61a127f96"
 
 [vars]
 ALLOWED_ORIGIN = "https://kibruder.github.io"
-
-[[r2_buckets]]
-binding = "AWIN_CATALOG"
-bucket_name = "northstar-awin-catalog"
