@@ -20,12 +20,17 @@ The new tables have been created and existence checked against D1. This does not
 
 ## Integration facts
 - Awin Publisher API connection was previously verified for publisher Ai.Boxx (2069027). It currently shows one joined advertiser, Steuertipps DE.
-- Awin Data Feed key is configured as a Worker secret; the app successfully retrieved a feed list with 563 feeds. The previous eight-feed import attempt stored zero products and returned invalid feed ID errors. Treat import as blocked until a corrected run and D1 row count confirm success.
+- Awin Data Feed key is configured as a Worker secret; the app successfully retrieved a feed list with 563 feeds. The previous eight-feed import attempt stored zero products. I hardened the Worker feed-ID parser and deployed Worker version 70 (100% traffic). The frontend now imports only feeds belonging to programmes with confirmed active partnerships; it no longer falls back to non-joined programmes. D1 currently confirms 0 imported products, so the import remains unverified until a real run succeeds.
 - The connected Shopify store is in Germany and uses EUR, but the Shopify connector reports a trial plan. It is not ready for live selling until upgraded and configured.
 - The Awin connector returned an account-disabled error during the 2026-11-26 follow-up. Do not treat advertiser application or programme-term retrieval as currently available through that connector.
 
+## Latest engineering changes
+- Worker version 70 deployed at 100% traffic with more tolerant feed-ID parsing and explicit invalid-ID diagnostics.
+- GitHub Pages frontend updated to block imports of non-joined advertiser feeds.
+- D1 verified at 0 Awin products, 0 import jobs, 0 supplier programmes and 0 normalized offers at this checkpoint.
+
 ## Next engineering work
-1. Correct Awin feed selection/import end-to-end; normalize the real CSV headers; persist job status; verify row counts, advertiser coverage and sample rows.
+1. Test the revised feed import from the live Northstar UI; confirm actual D1 product counts and inspect sample rows.
 2. Populate supplier_programmes from verified programme discovery and store programme terms with retrieval timestamps.
 3. Add a worker API for scoring, approval requests, offer normalization and supplier evidence.
 4. Add UI screens for channel status, partner pipeline, supplier pipeline, offers, approval queue, order monitoring and contribution margin.
