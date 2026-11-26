@@ -29,7 +29,7 @@ function renderNav(){
   $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[6],sections[5],sections[12]]);
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.nav)));
 }
-function go(id){active=id;renderNav();renderPage();$('.sidebar')?.classList.remove('open');document.body.classList.remove('menu-open');$('#mobileMenu')?.setAttribute('aria-expanded','false');$('#mobileMenu')?.setAttribute('aria-label','Menü öffnen');}
+function go(id){active=id;renderNav();renderPage();if(id==='shop'&&localStorage.getItem('northstar_session_token')&&state.workspaceId)loadShopOffers();$('.sidebar')?.classList.remove('open');document.body.classList.remove('menu-open');$('#mobileMenu')?.setAttribute('aria-expanded','false');$('#mobileMenu')?.setAttribute('aria-label','Menü öffnen');}
 function header(title,sub){$('#pageTitle').textContent=title;$('#sectionEyebrow').textContent=sub;}
 function card(label,value,meta,icon='•'){return `<article class="metric-card"><div class="metric-top"><span>${label}</span><span class="metric-icon">${icon}</span></div><strong>${value}</strong><small>${meta}</small></article>`;}
 function empty(title,desc,action=''){return `<div class="empty-state"><div class="empty-icon">◇</div><h3>${title}</h3><p>${desc}</p>${action}</div>`;}
