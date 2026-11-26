@@ -610,10 +610,37 @@ async function loadAwinFeeds(){
    const aj=/active|joined/i.test(String(a.membershipStatus||''))?1:0,bj=/active|joined/i.test(String(b.membershipStatus||''))?1:0;
    return bj-aj || Number(b.productCount||0)-Number(a.productCount||0);
   });
-  if(result)result.innerHTML=feeds.length?'<div class="detail-block"><span>Deutschland-Fokus · Ai.Boxx</span><p class="form-hint">Priorisiert: deutsche Programme, aktive Partnerschaften und anschließend Kataloggröße. Nicht beigetretene Programme erfordern erst eine Bewerbung bei Awin.</p><div class="metric-grid"><div class="metric-card"><span>DE-Feeds</span><strong>'+deFeeds.length+'</strong></div><div class="metric-card"><span>Aktive Partnerschaften</span><strong>'+joined.length+'</strong></div><div class="metric-card"><span>Home / Garden / Outdoor</span><strong>'+focus.length+'</strong></div></div><ul>'+ranked.slice(0,40).map(f=>'<li><strong>'+esc(f.advertiserName||'Advertiser')+'</strong>'+(f.region?' · '+esc(f.region):'')+(f.membershipStatus?' · '+esc(f.membershipStatus):'')+(f.vertical?' · '+esc(f.vertical):'')+(f.productCount?' · '+Number(f.productCount).toLocaleString('de-DE')+' Produkte':'')+'</li>').join('')+'</ul><p class="form-hint">Anzeige: '+Math.min(ranked.length,40)+' von '+deFeeds.length+' deutschen Feeds. Die übrigen Feeds bleiben über Awin verfügbar.</p></div>':'<p class="form-hint">Awin hat aktuell keine Produktfeeds für diesen Publisher zurückgegeben.</p>';
-  log('Awin-Produktfeeds abgerufen','Verfügbare Feeds: '+feeds.length+'; DE: '+deFeeds.length+'; aktive DE: '+joined.length);
+  const candidates=ranked.filter(f=>f.feedId&&Number(f.productCount)>0);
+  const recommended=candidates.filter(f=>/active|joined/i.test(String(f.membershipStatus||''))).sort((a,b)=>{
+   const score=f=>((/garden|home|outdoor|tool|sport|electronics/i.test(String(f.vertical||''))?100:0)+Math.min(Number(f.productCount||0),50000)/1000);
+   return score(b)-score(a);
+  }).slice(0,8);
+  const selected=recommended.length?recommended:candidates.slice(0,5);
+  if(result)result.innerHTML=feeds.length?'<div class="detail-block"><span>Deutschland-Fokus · Ai.Boxx</span><p class="form-hint">Ich habe deutsche Feeds priorisiert. Für den ersten Import nehmen wir nur wenige Programme, um Datenqualität und Laufzeit zu prüfen.</p><div class="metric-grid"><div class="metric-card"><span>DE-Feeds</span><strong>'+deFeeds.length+'</strong></div><div class="metric-card"><span>Aktive Partnerschaften</span><strong>'+joined.length+'</strong></div><div class="metric-card"><span>Importauswahl</span><strong>'+selected.length+'</strong></div></div><ul>'+selected.map(f=>'<li><strong>'+esc(f.advertiserName||'Advertiser')+'</strong>'+(f.vertical?' · '+esc(f.vertical):'')+' · '+Number(f.productCount||0).toLocaleString('de-DE')+' Produkte · '+esc(f.membershipStatus||'Status unbekannt')+'</li>').join('')+'</ul><button class="button button-primary" id="importRecommendedAwinFeeds" data-feed-ids="'+selected.map(f=>esc(f.feedId)).join(',')+'" '+(selected.length?'':'disabled')+'>Ausgewählte DE-Feeds importieren</button><div id="awinImportStatus" class="form-hint" aria-live="polite"></div></div>':'<p class="form-hint">Awin hat aktuell keine Produktfeeds für diesen Publisher zurückgegeben.</p>';
+  $('#importRecommendedAwinFeeds')?.addEventListener('click',importRecommendedAwinFeeds);
+  log('Awin-Produktfeeds abgerufen','Verfügbare Feeds: '+feeds.length+'; DE: '+deFeeds.length+'; aktive DE: '+joined.length+'; Importauswahl: '+selected.length);
  }catch(error){if(status)status.textContent='Produktfeeds nicht verfügbar: '+String(error.message||error);}
 }
+
+async function importRecommendedAwinFeeds(event){
+ const button=event.currentTarget,status=$('#awinImportStatus'),token=localStorage.getItem('northstar_session_token');
+ const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\\/$/,'');
+ const ids=String(button.dataset.feedIds||'').split(',').filter(x=>/^\\d+$/.test(x));
+ if(!token||!ids.length)return;
+ button.disabled=true;let total=0,failed=[];
+ for(let i=0;i<ids.length;i++){
+  if(status)status.textContent='Importiere Feed '+(i+1)+' von '+ids.length+' …';
+  try{
+   const r=await fetch(base+'/api/awin/catalog/import-feed',{method:'POST',headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({feedId:ids[i]})});
+   const p=await r.json().catch(()=>({}));
+   if(!r.ok)throw new Error(p.error||'HTTP '+r.status);
+   total+=Number(p.imported||0);
+  }catch(e){failed.push('Feed '+ids[i]+': '+String(e.message||e));}
+ }
+ if(status)status.textContent='Import abgeschlossen: '+total.toLocaleString('de-DE')+' Produkte gespeichert.'+(failed.length?' Fehler: '+failed.join(' · '):'');
+ button.disabled=false;toast('Awin-Import: '+total.toLocaleString('de-DE')+' Produkte.');
+}
+
 async function checkAwinConnection(){
  const status=$('#awinConnectionStatus'),result=$('#awinPublisherResult');
  const token=localStorage.getItem('northstar_session_token');
