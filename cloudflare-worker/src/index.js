@@ -281,7 +281,7 @@ async function awinFeedsApi(request, env, cors) {
    region:get(r,['primary region','primaryregion']),membershipStatus:get(r,['membership status','membershipstatus']),
    format:get(r,['datafeed format','datafeedformat']),feedId:get(r,['feed id','feedid']),feedName:get(r,['feed name','feedname']),
    language:get(r,['language']),vertical:get(r,['vertical']),lastImported:get(r,['last imported','lastimported']),
-   lastChecked:get(r,['last checked','lastchecked']),productCount:Number(get(r,['no of products','number of products','product count']).replace(/[^0-9]/g,''))||0,downloadUrl:get(r,['url','download url','downloadurl'])
+   lastChecked:get(r,['last checked','lastchecked']),productCount:Number(get(r,['no of products','number of products','product count']).replace(/[^0-9]/g,''))||0
   })).filter(x=>x.advertiserId||x.advertiserName);
   return json({ok:true,publisherId,feedCount:feeds.length,feeds},200,cors);
  }catch(error){return json({error:'Awin-Feedliste ist derzeit nicht erreichbar.',detail:String(error?.message||error).slice(0,300)},502,cors);}
@@ -342,9 +342,8 @@ async function awinCatalogImportFeedApi(request, env, cors) {
   if(ri>=0&&String(row[ri]||'').toUpperCase()!=='DE')return json({error:'Nur deutsche Feeds dürfen importiert werden.'},403,cors);
   const u=String(row[ui]||'').trim();if(!u.startsWith('https://productdata.awin.com/datafeed/download/'))return json({error:'Ungültige Awin-Feed-URL.'},502,cors);
   const fr=await fetch(u);if(!fr.ok)return json({error:'Feeddownload fehlgeschlagen.',status:fr.status},502,cors);
-  let stream=fr.body;const ce=(fr.headers.get('content-encoding')||'').toLowerCase();
-  if(ce.includes('gzip')||u.includes('compression/gzip'))stream=stream.pipeThrough(new DecompressionStream('gzip'));
-  const data=parseAwinCsv(await new Response(stream).text());if(data.length<2)return json({error:'Feed leer oder nicht lesbar.'},422,cors);
+  let bytes=await fr.arrayBuffer();const magic=new Uint8Array(bytes,0,2);if(magic[0]===31&&magic[1]===139)bytes=await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  const data=parseAwinCsv(new TextDecoder('utf-8').decode(bytes));if(data.length<2)return json({error:'Feed leer oder nicht lesbar.'},422,cors);
   const heads=data[0].map(x=>String(x||'').trim().toLowerCase()),col=(...n)=>heads.findIndex(x=>n.includes(x));
   const ixp={id:col('aw_product_id','product_id','pid'),name:col('product_name','name'),price:col('search_price','price'),merchant:col('merchant_name'),merchantId:col('merchant_id','advertiser_id'),category:col('category_name'),mcat:col('merchant_category'),currency:col('currency'),stock:col('in_stock','stock_status'),image:col('merchant_image_url','aw_image_url','image_url','imgurl'),link:col('aw_deep_link','deep_link','purl')};
   if(ixp.id<0||ixp.name<0)return json({error:'Produkt-ID oder Produktname fehlt.'},422,cors);
