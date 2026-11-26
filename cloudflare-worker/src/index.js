@@ -18,6 +18,7 @@ export default {
    if (url.pathname.endsWith('/api/auth/login')) return await authApi(request, env, cors, 'login');
    if (url.pathname.endsWith('/api/auth/me')) return await authApi(request, env, cors, 'me');
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
+  if (url.pathname.endsWith('/api/storefront/products')) return await storefrontProductsApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/feeds')) return await awinFeedsApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/catalog/import')) return await awinCatalogImportApi(request, env, cors);
@@ -95,6 +96,26 @@ function json(data,status,headers) {
  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
 }
 
+
+
+async function storefrontProductsApi(request, env, cors) {
+ if (request.method !== 'GET') return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
+ const db=env.DB||env.db;
+ if(!db) return json({error:'Produktdatenbank ist nicht verfügbar.'},503,cors);
+ try {
+  const rows=await db.prepare("SELECT id,title,brand,category,sale_price,currency,image_url,product_url,stock_status,updated_at FROM commerce_offers WHERE status='published' AND source_type IN ('manual','supplier') AND sale_price IS NOT NULL AND sale_price > 0 ORDER BY updated_at DESC LIMIT 100").all();
+  const products=rows.results.map(row=>({
+   id:row.id,title:row.title,brand:row.brand||'',category:row.category||'',
+   price:Number(row.sale_price),currency:row.currency||'EUR',
+   imageUrl:row.image_url||'',productUrl:row.product_url||'',
+   availability:row.stock_status||'unbekannt',updatedAt:row.updated_at
+  }));
+  return json({products,count:products.length},200,{...cors,'Cache-Control':'public, max-age=60, s-maxage=60'});
+ } catch(error) {
+  console.error('[northstar-storefront] catalog failed',String(error?.message||error));
+  return json({error:'Produktkatalog konnte nicht geladen werden.'},500,cors);
+ }
+}
 
 async function syncApi(request, env, cors) {
  if (!['GET','POST'].includes(request.method)) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
