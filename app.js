@@ -6,7 +6,7 @@ const sections = [
   ['overview','Übersicht','▦'],['products','Produkte','◇'],['content','Content-Studio','▤'],
   ['production','Produktion','✦'],['calendar','Planung','▦'],['analytics','Analysen','⌁'],
   ['finance','Finanzen','€'],['partners','Partnernetzwerk','◎'],['agents','KI-Agenten','⌘'],
-  ['documents','Dokumente','▧'],['reports','Managementberichte','▥'],['settings','Einstellungen','⚙']
+  ['documents','Dokumente','▧'],['reports','Managementberichte','▥'],['settings','Einstellungen','⚙'],['shop','Shop-Verwaltung','▣']
 ];
 let active = 'overview';
 let pendingScreenshotDataUrl = '';
@@ -26,7 +26,7 @@ function log(action, detail=''){ state.activities.unshift({id:crypto.randomUUID(
 function navMarkup(items){return items.map(([id,label,icon])=>`<button class="nav-item ${active===id?'active':''}" data-nav="${id}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`).join('');}
 function renderNav(){
   $('#sideNav').innerHTML = `<div class="nav-group-label">ARBEITSPLATZ</div>${navMarkup(sections.slice(0,5))}<div class="nav-group-label">STEUERUNG</div>${navMarkup(sections.slice(5,11))}<div class="nav-group-label">SYSTEM</div>${navMarkup(sections.slice(11))}`;
-  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[6],sections[5],sections[11]]);
+  $('#mobileNav').innerHTML = navMarkup([sections[0],sections[1],sections[2],sections[6],sections[5],sections[12]]);
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.nav)));
 }
 function go(id){active=id;renderNav();renderPage();$('.sidebar')?.classList.remove('open');document.body.classList.remove('menu-open');$('#mobileMenu')?.setAttribute('aria-expanded','false');$('#mobileMenu')?.setAttribute('aria-label','Menü öffnen');}
@@ -712,13 +712,70 @@ async function syncAllData(){
  return 'Synchronisierung abgeschlossen. '+stores.reduce((sum,store)=>sum+state[store].length,0)+' Datensätze in '+workspaces.length+' Arbeitsbereichen abgeglichen.';
 }
 
+
+let shopOffers=[];
+function shopAdminPage(){
+ header('Shop-Verwaltung','E-COMMERCE · PRODUKTANGEBOTE');
+ const token=localStorage.getItem('northstar_session_token');
+ return `<div class="page-toolbar"><div><h2>Öffentliche Shop-Angebote</h2><p>Produkte erfassen, prüfen und manuell für den öffentlichen Shop freigeben.</p></div><button class="button button-secondary" id="shopReload" ${token?'':'disabled'}>↻ Aktualisieren</button></div>
+ ${!token?'<div class="notice"><strong>Anmeldung erforderlich</strong><span>Bitte zuerst unter Einstellungen dein Northstar-Konto anmelden. Danach kannst du Shop-Angebote verwalten.</span></div>':''}
+ <section class="panel"><div class="panel-head"><div><h3>Neues Angebot anlegen</h3><p>Nur geprüfte Produkte mit geklärtem Einkauf, Versand und Rückgabe veröffentlichen.</p></div><span class="status-tag">Manuelle Freigabe</span></div>
+ <form id="shopOfferForm" class="data-form">
+ <input type="hidden" name="id">
+ <label>Produktname *<input name="title" required maxlength="180" placeholder="z. B. Gartenwerkzeug"></label>
+ <div class="form-grid"><label>Marke<input name="brand" maxlength="120"></label><label>Kategorie<input name="category" maxlength="120" placeholder="Haus & Garten"></label></div>
+ <div class="form-grid"><label>Einkaufspreis (EUR)<input name="costPrice" type="number" min="0" step="0.01" placeholder="optional"></label><label>Verkaufspreis (EUR)<input name="salePrice" type="number" min="0.01" step="0.01" placeholder="z. B. 29,99"></label></div>
+ <div class="form-grid"><label>Bestand / Verfügbarkeit<input name="stockStatus" maxlength="60" placeholder="z. B. Verfügbarkeit bestätigt"></label><label>Lieferzeit (Tage)<input name="shippingDays" type="number" min="0" max="365" step="1"></label></div>
+ <label>Produktbild-URL<input name="imageUrl" type="url" placeholder="https://..."></label>
+ <label>Produkt- / Lieferantenlink<input name="productUrl" type="url" placeholder="https://..."></label>
+ <label>Fulfillment<input name="fulfillmentType" maxlength="80" placeholder="z. B. EU-Lieferant, eigener Versand"></label>
+ <label>Status<select name="status"><option value="candidate">Entwurf – nicht öffentlich</option><option value="review">Prüfung erforderlich</option><option value="published">Öffentlich freigeben</option><option value="paused">Pausiert</option></select></label>
+ <div class="form-actions"><button class="button button-secondary" type="reset" id="shopFormReset">Zurücksetzen</button><button class="button button-primary" type="submit" ${token?'':'disabled'}>Angebot speichern</button></div>
+ <p class="form-hint">Die Freigabe ist eine bewusste manuelle Aktion. Das Formular prüft grundlegende Pflichtfelder, ersetzt aber keine Lieferanten-, Produktsicherheits- oder Rechtsprüfung.</p>
+ </form></section>
+ <section class="panel"><div class="panel-head"><div><h3>Gespeicherte Angebote</h3><p>Nur Status „Öffentlich freigeben“ erscheint im öffentlichen Katalog.</p></div><span class="status-tag">${shopOffers.length} Angebote</span></div>
+ <div id="shopOfferList">${shopOffers.length?shopOffers.map(shopOfferCard).join(''):'<div class="empty-state"><h3>Noch keine Angebote geladen</h3><p>Mit „Aktualisieren“ Angebote aus der privaten Datenbank abrufen.</p></div>'}</div>
+ </section>
+ <div class="notice"><strong>Wichtige Grenze</strong><span>Ein veröffentlichter Datensatz ist noch kein vollständiger rechtskonformer Verkaufsprozess. Checkout, Steuern, Widerruf, Impressum, Datenschutz, Versand- und Rückgabeprozess müssen vor dem tatsächlichen Verkaufsstart fertiggestellt sein.</span></div>`;
+}
+function shopOfferCard(o){
+ const statusLabels={candidate:'Entwurf',review:'Prüfung',published:'Öffentlich',paused:'Pausiert'};
+ return `<article class="product-card" style="margin:10px 0;padding:14px"><div class="product-card-heading"><div><strong>${esc(o.title)}</strong><small>${esc(o.brand||'Marke offen')} · ${esc(o.category||'Kategorie offen')} · ${o.sale_price!=null?money(o.sale_price):'Kein Verkaufspreis'}</small></div><span class="status-tag">${statusLabels[o.status]||esc(o.status)}</span></div><div class="product-card-actions"><button class="button button-secondary" data-shop-edit="${esc(o.id)}">Bearbeiten</button>${o.status!=='published'?'<button class="button button-primary" data-shop-status="'+esc(o.id)+'" data-status="published">Öffentlich freigeben</button>':''}${o.status==='published'?'<button class="button button-secondary" data-shop-status="'+esc(o.id)+'" data-status="paused">Pausieren</button>':''}</div></article>`;
+}
+function shopApiBase(){return (localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\/$/,'');}
+async function loadShopOffers(){
+ const token=localStorage.getItem('northstar_session_token');if(!token){toast('Bitte zuerst anmelden.');return;}
+ const base=shopApiBase(),url=base+'/api/store-admin/offers?workspaceId='+encodeURIComponent(state.workspaceId);
+ try{const r=await fetch(url,{headers:{Authorization:'Bearer '+token,Accept:'application/json'}});const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||'Angebote konnten nicht geladen werden.');shopOffers=Array.isArray(p.offers)?p.offers:[];renderPage();toast(shopOffers.length+' Shop-Angebote geladen.');}
+ catch(e){toast(String(e.message||e));}
+}
+async function saveShopOffer(event){
+ event.preventDefault();const token=localStorage.getItem('northstar_session_token');if(!token){toast('Bitte zuerst anmelden.');return;}
+ const data=new FormData(event.currentTarget),payload={id:data.get('id')||undefined,workspaceId:state.workspaceId,title:data.get('title'),brand:data.get('brand'),category:data.get('category'),costPrice:data.get('costPrice'),salePrice:data.get('salePrice'),stockStatus:data.get('stockStatus'),shippingDays:data.get('shippingDays'),imageUrl:data.get('imageUrl'),productUrl:data.get('productUrl'),fulfillmentType:data.get('fulfillmentType'),status:data.get('status'),sourceType:'manual'};
+ try{const r=await fetch(shopApiBase()+'/api/store-admin/offers',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)});const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||'Speichern fehlgeschlagen.');await loadShopOffers();toast('Shop-Angebot gespeichert.');}
+ catch(e){toast(String(e.message||e));}
+}
+function editShopOffer(id){
+ const o=shopOffers.find(x=>x.id===id);if(!o)return;const form=$('#shopOfferForm');if(!form)return;
+ for(const [key,value] of Object.entries({id:o.id,title:o.title,brand:o.brand,category:o.category,costPrice:o.cost_price,salePrice:o.sale_price,stockStatus:o.stock_status,shippingDays:o.shipping_days,imageUrl:o.image_url,productUrl:o.product_url,fulfillmentType:o.fulfillment_type,status:o.status})){if(form.elements[key])form.elements[key].value=value??'';}
+ form.scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function changeShopOfferStatus(id,status){
+ const o=shopOffers.find(x=>x.id===id);if(!o)return;
+ if(status==='published'&&!confirm('Dieses Angebot öffentlich im Shop anzeigen? Bitte bestätige, dass Preis, Lieferbarkeit, Produktkonformität, Versand und Rückgabe geprüft sind.'))return;
+ const payload={id:o.id,workspaceId:state.workspaceId,title:o.title,brand:o.brand,category:o.category,costPrice:o.cost_price,salePrice:o.sale_price,stockStatus:o.stock_status,shippingDays:o.shipping_days,imageUrl:o.image_url,productUrl:o.product_url,fulfillmentType:o.fulfillment_type,status,sourceType:o.source_type};
+ const token=localStorage.getItem('northstar_session_token');
+ try{const r=await fetch(shopApiBase()+'/api/store-admin/offers',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(payload)});const p=await r.json().catch(()=>({}));if(!r.ok)throw new Error(p.error||'Statusänderung fehlgeschlagen.');await loadShopOffers();}
+ catch(e){toast(String(e.message||e));}
+}
+
 function simplePage(id){
  if(id==='agents')return agentsPage();if(id==='finance')return financePage();
  const [title,eyebrow,desc,note]=simplePages[id]; header(title,eyebrow);
  return `<div class="hero-panel"><div class="hero-icon">${sections.find(s=>s[0]===id)?.[2]||'•'}</div><div><h2>${title}</h2><p>${desc}</p></div></div><div class="panel"><h3>Modulstatus</h3><p class="muted">Grundstruktur angelegt · Fachfunktionen werden in den nächsten Entwicklungsstufen integriert.</p><div class="progress-track"><span style="width:12%"></span></div><small class="muted">Grundgerüst: Navigation und lokale Datenbasis vorhanden</small></div><div class="notice"><strong>Umsetzungsregel</strong><span>${note}</span></div>`;
 }
 function renderPage(){
- const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():active==='settings'?settingsPage():simplePage(active);
+ const el=$('#page'); el.innerHTML = active==='overview'?overview():active==='products'?productsPage():active==='content'?contentPage():active==='settings'?settingsPage():active==='shop'?shopAdminPage():simplePage(active);
  el.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
  $('#addProduct')?.addEventListener('click',()=>showProductForm());
  $('#inspectProductLink')?.addEventListener('click',inspectProductLink);
