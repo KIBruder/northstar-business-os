@@ -267,7 +267,7 @@ async function awinFeedsApi(request, env, cors) {
  if(!env.AWIN_DATAFEED_KEY)return json({error:'AWIN_DATAFEED_KEY fehlt. Der separate Awin-Data-Feed-Key muss als Cloudflare-Worker-Secret hinterlegt werden.'},503,cors);
  const publisherId='2069027';
  try{
-  const url='https://productdata.awin.com/datafeed/list/apikey/'+encodeURIComponent(env.AWIN_DATAFEED_KEY)';
+  const url='https://productdata.awin.com/datafeed/list/apikey/'+encodeURIComponent(env.AWIN_DATAFEED_KEY);
   const response=await fetch(url,{headers:{Accept:'text/csv'}});
   const body=await response.text();
   if(!response.ok)return json({error:'Awin-Feedliste konnte nicht geladen werden.',status:response.status,detail:body.slice(0,400)},response.status===429?429:502,cors);
