@@ -821,6 +821,11 @@ function renderPage(){
  $('#generateSlideImages')?.addEventListener('click',e=>generateSlideImages(e.currentTarget.dataset.id));
  $('#saveAllSlidesToPhotos')?.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId));
  document.querySelectorAll('[data-save-slide]').forEach(button=>button.addEventListener('click',()=>shareGeneratedSlides(state.selectedPostId,Number(button.dataset.saveSlide))));
+ $('#shopReload')?.addEventListener('click',loadShopOffers);
+ $('#shopOfferForm')?.addEventListener('submit',saveShopOffer);
+ $('#shopOfferForm')?.addEventListener('reset',()=>{setTimeout(()=>{const id=$('#shopOfferForm [name="id"]');if(id)id.value='';},0);});
+ document.querySelectorAll('[data-shop-edit]').forEach(button=>button.addEventListener('click',()=>editShopOffer(button.dataset.shopEdit)));
+ document.querySelectorAll('[data-shop-status]').forEach(button=>button.addEventListener('click',()=>changeShopOfferStatus(button.dataset.shopStatus,button.dataset.status)));
 }
 function classifyProductUrl(raw){
  let u;
