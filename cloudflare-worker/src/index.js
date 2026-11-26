@@ -331,7 +331,7 @@ async function awinCatalogImportFeedApi(request, env, cors) {
  const db=env.DB||env.db;if(!db||!env.AWIN_DATAFEED_KEY)return json({error:'D1-Binding oder AWIN_DATAFEED_KEY fehlt.'},503,cors);
  try{
   const {feedId}=await request.json();const id=String(feedId||'').trim();
-  if(!/^\\d+$/.test(id))return json({error:'Ungültige Feed-ID.'},400,cors);
+  if(!/^\d+$/.test(id))return json({error:'Ungültige Feed-ID.'},400,cors);
   const lr=await fetch('https://productdata.awin.com/datafeed/list/apikey/'+encodeURIComponent(env.AWIN_DATAFEED_KEY));
   if(!lr.ok)return json({error:'Awin-Feedliste nicht erreichbar.',status:lr.status},502,cors);
   const rows=parseAwinCsv(await lr.text()),h=rows[0].map(x=>String(x||'').trim().toLowerCase());
