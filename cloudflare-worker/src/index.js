@@ -330,8 +330,8 @@ async function awinCatalogImportFeedApi(request, env, cors) {
  try{await verifySessionToken(request,env);}catch{return json({error:'Anmeldung fehlt oder Sitzung ist abgelaufen.'},401,cors);}
  const db=env.DB||env.db;if(!db||!env.AWIN_DATAFEED_KEY)return json({error:'D1-Binding oder AWIN_DATAFEED_KEY fehlt.'},503,cors);
  try{
-  const {feedId}=await request.json();const id=String(feedId||'').trim();
-  if(!/^\d+$/.test(id))return json({error:'Ungültige Feed-ID.'},400,cors);
+  const input=await request.json();const rawId=input?.feedId??input?.feed_id??input?.id??'';const id=String(rawId).replace(/[\\u200B-\\u200D\\uFEFF]/g,'').trim();
+  if(!/^\\d{1,12}$/.test(id))return json({error:'Ungültige Feed-ID.',receivedType:typeof rawId,receivedValue:String(rawId).slice(0,80)},400,cors);
   const lr=await fetch('https://productdata.awin.com/datafeed/list/apikey/'+encodeURIComponent(env.AWIN_DATAFEED_KEY));
   if(!lr.ok)return json({error:'Awin-Feedliste nicht erreichbar.',status:lr.status},502,cors);
   const rows=parseAwinCsv(await lr.text()),h=rows[0].map(x=>String(x||'').trim().toLowerCase());
