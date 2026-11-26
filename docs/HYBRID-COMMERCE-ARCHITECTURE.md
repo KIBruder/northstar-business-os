@@ -3,7 +3,7 @@
 ## Product decision
 Northstar is one commerce operating system with two revenue engines:
 1. Affiliate commerce: Awin, eBay Partner Network and Check24. The merchant remains seller of record and fulfils the order; Northstar earns the tracked commission.
-2. Owned-store commerce: Shopify storefront plus approved suppliers and fulfilment. Northstar is responsible for storefront merchandising, customer journey, support workflows and contribution-margin monitoring. Supplier fulfilment is only activated after supplier, shipping, returns and product compliance are verified.
+2. Owned-store commerce: a custom Northstar storefront hosted on the existing GitHub Pages / Cloudflare stack, with approved suppliers and fulfilment. Shopify is explicitly excluded because it adds a monthly subscription. Northstar owns merchandising, checkout orchestration, support workflows and contribution-margin monitoring. Stripe Checkout is the preferred hosted payment option (no monthly platform fee; payment processing fees apply), subject to account approval and integration. Supplier fulfilment is activated only after supplier, shipping, returns and product compliance are verified.
 
 Both engines share a canonical offer/product record, scoring, content pipeline, campaign attribution and finance ledger.
 
@@ -19,7 +19,7 @@ Both engines share a canonical offer/product record, scoring, content pipeline, 
 ## System topology
 Browser PWA -> Cloudflare Worker API -> Cloudflare D1.
 The Worker owns credentials and validates every action. The browser must never receive Awin, supplier, Shopify or signing secrets.
-External connectors: Awin publisher API/datafeeds, eBay Partner Network (where authorised), Check24 (programme-specific access), Shopify Admin API/connector, supplier APIs or CSV feeds, social publishing APIs where available.
+External connectors: Awin publisher API/datafeeds, eBay Partner Network (where authorised), Check24 (programme-specific access), Stripe Checkout (or another no-monthly-fee payment processor), supplier APIs or CSV feeds, social publishing APIs where available.
 
 ## Shared data domains
 - commerce_channels: connected/planned networks and channels.
@@ -62,7 +62,7 @@ Do not invent commission rates, supplier costs, stock, delivery times or convers
 Phase 1 — Data foundation: complete Awin import validation, normalize offers, store provenance and timestamps, add supplier/programme status and approval queue.
 Phase 2 — Partner pipeline: score German/EU programmes and draft applications; user approves submissions.
 Phase 3 — Supplier pipeline: compare EU suppliers and dropshipping terms, verify product safety, delivery, returns and real landed cost.
-Phase 4 — Store pilot: use Shopify only after plan upgrade and store configuration; launch a small, low-risk assortment with manual order approval.
+Phase 4 — Store pilot: implement Northstar storefront on existing Pages/Workers/D1 stack and hosted Stripe Checkout; launch a small, low-risk assortment with manual order approval. Keep platform subscription cost at €0; transaction fees and optional domain costs remain.
 Phase 5 — Content and distribution: create reusable product content and schedule posts through supported platform APIs; maintain a manual queue for channels without authorised publishing APIs.
 Phase 6 — Optimization: evaluate actual sales, returns, chargebacks, commission validation, margin and content performance; scale only proven products.
 
