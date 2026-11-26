@@ -19,6 +19,7 @@ export default {
    if (url.pathname.endsWith('/api/auth/me')) return await authApi(request, env, cors, 'me');
    if (url.pathname.endsWith('/api/sync')) return await syncApi(request, env, cors);
   if (url.pathname.endsWith('/api/storefront/products')) return await storefrontProductsApi(request, env, cors);
+  if (url.pathname.endsWith('/api/store-admin/offers')) return await storeAdminOffersApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/publishers')) return await awinPublishersApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/feeds')) return await awinFeedsApi(request, env, cors);
   if (url.pathname.endsWith('/api/awin/catalog/import')) return await awinCatalogImportApi(request, env, cors);
@@ -97,6 +98,47 @@ function json(data,status,headers) {
 }
 
 
+
+
+async function storeAdminOffersApi(request, env, cors) {
+ if (!['GET','POST'].includes(request.method)) return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, POST, OPTIONS'});
+ let subject;
+ try { subject=await verifySessionToken(request,env); }
+ catch { return json({error:'Bitte anmelden. Die Sitzung fehlt oder ist abgelaufen.'},401,cors); }
+ const db=env.DB||env.db;
+ if(!db)return json({error:'D1-Datenbank ist nicht verfügbar.'},503,cors);
+ try {
+  if(request.method==='GET') {
+   const workspaceId=new URL(request.url).searchParams.get('workspaceId');
+   if(!workspaceId||workspaceId.length>128)return json({error:'workspaceId fehlt oder ist ungültig.'},400,cors);
+   const exists=await db.prepare('SELECT id FROM workspaces WHERE owner_sub=? AND id=? AND deleted_at IS NULL').bind(subject,workspaceId).first();
+   if(!exists)return json({error:'Arbeitsbereich nicht gefunden oder kein Zugriff.'},403,cors);
+   const rows=await db.prepare('SELECT id,source_type,title,brand,category,cost_price,sale_price,currency,stock_status,shipping_days,image_url,product_url,fulfillment_type,score,status,created_at,updated_at FROM commerce_offers WHERE owner_sub=? AND workspace_id=? ORDER BY updated_at DESC LIMIT 500').bind(subject,workspaceId).all();
+   return json({offers:rows.results},200,cors);
+  }
+  const body=await request.json();
+  const workspaceId=String(body.workspaceId||'');
+  const title=String(body.title||'').trim().slice(0,180);
+  const id=String(body.id||crypto.randomUUID());
+  const sourceType=['manual','supplier'].includes(body.sourceType)?body.sourceType:'manual';
+  const status=['candidate','review','published','paused'].includes(body.status)?body.status:'candidate';
+  const price=body.salePrice===''||body.salePrice===null||body.salePrice===undefined?null:Number(body.salePrice);
+  const cost=body.costPrice===''||body.costPrice===null||body.costPrice===undefined?null:Number(body.costPrice);
+  if(!workspaceId||workspaceId.length>128||!title||id.length>128)return json({error:'Titel oder Arbeitsbereich fehlt.'},400,cors);
+  if(price!==null&&(!Number.isFinite(price)||price<=0||price>1000000))return json({error:'Verkaufspreis muss größer als 0 sein.'},400,cors);
+  if(cost!==null&&(!Number.isFinite(cost)||cost<0||cost>1000000))return json({error:'Einkaufspreis ist ungültig.'},400,cors);
+  if(status==='published'&&price===null)return json({error:'Zum Veröffentlichen ist ein gültiger Verkaufspreis erforderlich.'},400,cors);
+  const exists=await db.prepare('SELECT id FROM workspaces WHERE owner_sub=? AND id=? AND deleted_at IS NULL').bind(subject,workspaceId).first();
+  if(!exists)return json({error:'Arbeitsbereich nicht gefunden oder kein Zugriff.'},403,cors);
+  const now=new Date().toISOString();
+  const bind=(v,max=500)=>String(v||'').trim().slice(0,max)||null;
+  await db.prepare("INSERT INTO commerce_offers (id,owner_sub,workspace_id,source_type,title,brand,category,cost_price,sale_price,currency,stock_status,shipping_days,image_url,product_url,fulfillment_type,compliance_json,score,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_sub,id) DO UPDATE SET source_type=excluded.source_type,title=excluded.title,brand=excluded.brand,category=excluded.category,cost_price=excluded.cost_price,sale_price=excluded.sale_price,currency=excluded.currency,stock_status=excluded.stock_status,shipping_days=excluded.shipping_days,image_url=excluded.image_url,product_url=excluded.product_url,fulfillment_type=excluded.fulfillment_type,status=excluded.status,updated_at=excluded.updated_at").bind(id,subject,workspaceId,sourceType,title,bind(body.brand,120),bind(body.category,120),cost,price,'EUR',bind(body.stockStatus,60),body.shippingDays===''||body.shippingDays==null?null:Math.max(0,Math.min(365,Number(body.shippingDays))),bind(body.imageUrl,1500),bind(body.productUrl,1500),bind(body.fulfillmentType,80),JSON.stringify(body.compliance||{}),null,status,now,now).run();
+  return json({ok:true,id,status},200,cors);
+ } catch(error) {
+  console.error('[northstar-store-admin]',String(error?.message||error));
+  return json({error:'Shop-Angebot konnte nicht gespeichert werden.'},500,cors);
+ }
+}
 
 async function storefrontProductsApi(request, env, cors) {
  if (request.method !== 'GET') return json({error:'Method not allowed'},405,{...cors,'Access-Control-Allow-Methods':'GET, OPTIONS'});
