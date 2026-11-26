@@ -601,10 +601,17 @@ async function loadAwinFeeds(){
   const response=await fetch(base+'/api/awin/feeds',{headers:{Authorization:'Bearer '+token,Accept:'application/json'}});
   const payload=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error((payload.error||'Feedliste konnte nicht geladen werden.')+(payload.status?' · HTTP '+payload.status:'')+(payload.detail?' · '+String(payload.detail).slice(0,250):''));
-  if(status)status.textContent='Feedliste geladen: '+payload.feedCount+' verfügbare Produktfeeds.';
   const feeds=Array.isArray(payload.feeds)?payload.feeds:[];
-  if(result)result.innerHTML=feeds.length?'<div class="detail-block"><span>Verfügbare Awin-Feeds · Ai.Boxx</span><ul>'+feeds.map(f=>'<li><strong>'+esc(f.advertiserName||'Advertiser')+'</strong>'+(f.region?' · '+esc(f.region):'')+(f.membershipStatus?' · '+esc(f.membershipStatus):'')+(f.vertical?' · '+esc(f.vertical):'')+(f.productCount?' · '+Number(f.productCount).toLocaleString('de-DE')+' Produkte':'')+'</li>').join('')+'</ul></div>':'<p class="form-hint">Awin hat aktuell keine Produktfeeds für diesen Publisher zurückgegeben.</p>';
-  log('Awin-Produktfeeds abgerufen','Verfügbare Feeds: '+feeds.length);
+  const deFeeds=feeds.filter(f=>String(f.region||'').toUpperCase()==='DE');
+  const joined=deFeeds.filter(f=>/active|joined/i.test(String(f.membershipStatus||'')));
+  const focus=deFeeds.filter(f=>/home|garden|sport|outdoor|tool|electronics|house|wohnen|garten/i.test(String(f.vertical||'')));
+  if(status)status.textContent='Feedliste geladen: '+feeds.length+' Feeds · '+deFeeds.length+' Deutschland · '+joined.length+' aktiv beigetreten · '+focus.length+' thematisch passende DE-Feeds.';
+  const ranked=[...deFeeds].sort((a,b)=>{
+   const aj=/active|joined/i.test(String(a.membershipStatus||''))?1:0,bj=/active|joined/i.test(String(b.membershipStatus||''))?1:0;
+   return bj-aj || Number(b.productCount||0)-Number(a.productCount||0);
+  });
+  if(result)result.innerHTML=feeds.length?'<div class="detail-block"><span>Deutschland-Fokus · Ai.Boxx</span><p class="form-hint">Priorisiert: deutsche Programme, aktive Partnerschaften und anschließend Kataloggröße. Nicht beigetretene Programme erfordern erst eine Bewerbung bei Awin.</p><div class="metric-grid"><div class="metric-card"><span>DE-Feeds</span><strong>'+deFeeds.length+'</strong></div><div class="metric-card"><span>Aktive Partnerschaften</span><strong>'+joined.length+'</strong></div><div class="metric-card"><span>Home / Garden / Outdoor</span><strong>'+focus.length+'</strong></div></div><ul>'+ranked.slice(0,40).map(f=>'<li><strong>'+esc(f.advertiserName||'Advertiser')+'</strong>'+(f.region?' · '+esc(f.region):'')+(f.membershipStatus?' · '+esc(f.membershipStatus):'')+(f.vertical?' · '+esc(f.vertical):'')+(f.productCount?' · '+Number(f.productCount).toLocaleString('de-DE')+' Produkte':'')+'</li>').join('')+'</ul><p class="form-hint">Anzeige: '+Math.min(ranked.length,40)+' von '+deFeeds.length+' deutschen Feeds. Die übrigen Feeds bleiben über Awin verfügbar.</p></div>':'<p class="form-hint">Awin hat aktuell keine Produktfeeds für diesen Publisher zurückgegeben.</p>';
+  log('Awin-Produktfeeds abgerufen','Verfügbare Feeds: '+feeds.length+'; DE: '+deFeeds.length+'; aktive DE: '+joined.length);
  }catch(error){if(status)status.textContent='Produktfeeds nicht verfügbar: '+String(error.message||error);}
 }
 async function checkAwinConnection(){
