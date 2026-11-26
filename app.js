@@ -624,7 +624,7 @@ async function loadAwinFeeds(){
 
 async function importRecommendedAwinFeeds(event){
  const button=event.currentTarget,status=$('#awinImportStatus'),token=localStorage.getItem('northstar_session_token');
- const base=(localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev').replace(/\\/$/,'');
+ const rawBase=localStorage.getItem('northstar_sync_endpoint')||'https://northstar-image-generator.kibruder.workers.dev';const base=rawBase.endsWith('/')?rawBase.slice(0,-1):rawBase;
  const ids=String(button.dataset.feedIds||'').split(',').filter(x=>/^\d+$/.test(x));
  if(!token||!ids.length)return;
  button.disabled=true;let total=0,failed=[];
